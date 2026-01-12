@@ -44,6 +44,87 @@ detect_usb_device() {
     echo "$device"
 }
 
+# List all available USB storage devices (for selection)
+list_available_devices() {
+    echo -e "\n${CYAN}▶${NC} ${BOLD}Dispositivos de Armazenamento USB Disponíveis${NC}\n"
+    
+    # Header
+    printf "  %-12s %-8s %-15s %-10s %-10s\n" "DISPOSITIVO" "TIPO" "LABEL" "TAMANHO" "STATUS"
+    echo "  ────────────────────────────────────────────────────────────"
+    
+    local count=0
+    local mount_point="${MOUNT_POINT:-/mnt/bkp-pendrive}"
+    
+    # Get list of USB/removable devices with partitions
+    for dev in $(lsblk -rpno NAME,RM | awk '$2=="1" {print $1}' | grep -E "sd[a-z][0-9]+" || true); do
+        local fs size label mnt status
+        
+        # Get filesystem type
+        fs=$(lsblk -no FSTYPE "$dev" 2>/dev/null | head -1)
+        [ -z "$fs" ] && continue  # Skip if no filesystem
+        
+        # Get size and label
+        size=$(lsblk -no SIZE "$dev" 2>/dev/null | head -1)
+        label=$(lsblk -no LABEL "$dev" 2>/dev/null | head -1)
+        [ -z "$label" ] && label="-"
+        
+        # Check mount status
+        mnt=$(findmnt -n -o TARGET "$dev" 2>/dev/null)
+        if [ -n "$mnt" ]; then
+            if [ "$mnt" = "$mount_point" ]; then
+                status="${GREEN}Montado${NC}"
+            else
+                status="${YELLOW}Em uso${NC}"
+            fi
+        else
+            status="${CYAN}Disponível${NC}"
+        fi
+        
+        printf "  %-12s %-8s %-15s %-10s " "$dev" "$fs" "$label" "$size"
+        echo -e "$status"
+        ((count++)) || true
+    done
+    
+    # Also check USB transport devices (External HDs with RM=0 but TRAN=usb)
+    for dev in $(lsblk -rpno NAME,TRAN | awk '$2=="usb" {print $1}' | grep -E "sd[a-z][0-9]+"); do
+        local fs size label mnt status
+        
+        fs=$(lsblk -no FSTYPE "$dev" 2>/dev/null | head -1)
+        [ -z "$fs" ] && continue
+        
+        size=$(lsblk -no SIZE "$dev" 2>/dev/null | head -1)
+        label=$(lsblk -no LABEL "$dev" 2>/dev/null | head -1)
+        [ -z "$label" ] && label="-"
+        
+        mnt=$(findmnt -n -o TARGET "$dev" 2>/dev/null)
+        if [ -n "$mnt" ]; then
+            if [ "$mnt" = "$mount_point" ]; then
+                status="${GREEN}Montado${NC}"
+            else
+                status="${YELLOW}Em uso${NC}"
+            fi
+        else
+            status="${CYAN}Disponível${NC}"
+        fi
+        
+        printf "  %-12s %-8s %-15s %-10s " "$dev" "$fs" "$label" "$size"
+        echo -e "$status"
+        ((count++)) || true
+    done
+    
+    echo
+    
+    if [ $count -eq 0 ]; then
+        log_warn "Nenhum dispositivo USB de armazenamento encontrado"
+        log_hint "Verifique se os dispositivos estão anexados ao WSL: bkp-pendrive check"
+        return 1
+    fi
+    
+    echo -e "  ${BOLD}Total: $count dispositivo(s)${NC}"
+    echo
+    return 0
+}
+
 # Detect device by LABEL (optional)
 detect_device_by_label() {
     local label="$1"

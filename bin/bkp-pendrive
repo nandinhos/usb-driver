@@ -60,6 +60,7 @@ show_help() {
     echo "  up, mount       Anexa e monta o dispositivo"
     echo "  down, unmount   Desmonta o dispositivo"
     echo "  status          Mostra status atual"
+    echo "  list            Lista dispositivos USB disponíveis"
     echo "  check           Verifica integridade do ambiente"
     echo "  help            Mostra esta ajuda"
     echo
@@ -238,6 +239,12 @@ case "$COMMAND" in
         ;;
     status)
         cmd_status
+        ;;
+    list)
+        # Disable set -e for device enumeration (grep may return 1 for empty results)
+        set +e
+        list_available_devices
+        set -e
         ;;
     check)
         run_health_check
