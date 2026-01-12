@@ -6,27 +6,36 @@
 SUPPORTED_FS="ext4|ntfs|vfat|exfat|fuseblk"
 
 # Detect any removable USB device or External HD
+# SAFETY: Never return devices that are already mounted or system partitions
 detect_usb_device() {
     local device
-    # Strategy 1: Removable devices (Pendrives)
-    device=$(lsblk -rpno NAME,FSTYPE,RM,TYPE,TRAN | awk -v fs="$SUPPORTED_FS" '
+    local candidate
+    
+    # Strategy 1: Removable devices (Pendrives) - RM=1 flag
+    candidate=$(lsblk -rpno NAME,FSTYPE,RM,TYPE,TRAN | awk -v fs="$SUPPORTED_FS" '
         $3=="1" && $2 ~ fs {print $1; exit}
     ')
     
     # Strategy 2: USB transport devices (External HDs often appear as RM=0 but TRAN=usb)
-    if [ -z "$device" ]; then
-        device=$(lsblk -rpno NAME,FSTYPE,TRAN,TYPE | awk -v fs="$SUPPORTED_FS" '
+    if [ -z "$candidate" ]; then
+        candidate=$(lsblk -rpno NAME,FSTYPE,TRAN,TYPE | awk -v fs="$SUPPORTED_FS" '
             $3=="usb" && $4=="part" && $2 ~ fs {print $1; exit}
             $3=="usb" && $4=="disk" && $2 ~ fs {print $1; exit}
         ')
     fi
     
-    # Strategy 3: Just find the most recent SD device (fallback)
-    if [ -z "$device" ]; then
-        # Last added sdX device that supports one of our filesystems
-        device=$(lsblk -rpno NAME,FSTYPE | grep -E "sd[a-z][0-9]?" | awk -v fs="$SUPPORTED_FS" '
-            $2 ~ fs {print $1}
-        ' | tail -n1)
+    # SAFETY CHECK: Ensure candidate is NOT already mounted
+    if [ -n "$candidate" ]; then
+        local current_mount
+        current_mount=$(findmnt -n -o TARGET "$candidate" 2>/dev/null)
+        
+        # If device is already mounted somewhere OTHER than our mount point, reject it
+        if [ -n "$current_mount" ] && [ "$current_mount" != "${MOUNT_POINT:-/mnt/bkp-pendrive}" ]; then
+            # This device is mounted elsewhere (likely a system partition)
+            return 1
+        fi
+        
+        device="$candidate"
     fi
     
     if [ -z "$device" ]; then

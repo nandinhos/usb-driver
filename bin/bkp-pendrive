@@ -181,6 +181,7 @@ cmd_up() {
     
     if [ -z "$device" ]; then
         log_error "Nenhum dispositivo de armazenamento encontrado no WSL."
+        log_warn "Verifique se há dispositivo conectado ao USB, troque a porta e tente novamente."
         echo
         log_info "Tente manualmente no PowerShell (Admin):"
         log_info "  usbipd list"

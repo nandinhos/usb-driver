@@ -10,6 +10,7 @@
 
 ### 🐛 Correções
 - Correção na string de busca do `usbipd` para incluir dispositivos "UAS" e "SCSI".
+- **[CRÍTICO]** Corrigido bug que permitia montar partições do sistema quando nenhum USB estava conectado. Agora o script verifica se o dispositivo já está montado antes de prosseguir.
 
 ---
 
