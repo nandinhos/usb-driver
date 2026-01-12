@@ -57,10 +57,11 @@ show_help() {
     echo "  bkp-pendrive <comando> [opções]"
     echo
     echo -e "\033[1mComandos:\033[0m"
-    echo "  up, mount       Anexa e monta o dispositivo"
+    echo "  up, mount       Anexa e monta o dispositivo (auto-detecta)"
     echo "  down, unmount   Desmonta o dispositivo"
     echo "  status          Mostra status atual"
-    echo "  list            Lista dispositivos USB disponíveis"
+    echo "  list            Lista dispositivos USB (WSL + Windows)"
+    echo "  attach <BUSID>  Anexa dispositivo específico do Windows ao WSL"
     echo "  check           Verifica integridade do ambiente"
     echo "  help            Mostra esta ajuda"
     echo
@@ -79,6 +80,7 @@ show_help() {
 # Parse args
 # =========================
 COMMAND=""
+BUSID_ARG=""
 EXTRA_FLAGS=()
 for arg in "$@"; do
     case "$arg" in
@@ -91,6 +93,8 @@ for arg in "$@"; do
         *)
             if [ -z "$COMMAND" ]; then
                 COMMAND="$arg"
+            elif [ -z "$BUSID_ARG" ]; then
+                BUSID_ARG="$arg"
             fi
             ;;
     esac
@@ -227,6 +231,51 @@ cmd_status() {
     [ -n "$PENDRIVE_LABEL" ] && echo "Label esperada: $PENDRIVE_LABEL"
 }
 
+# Attach a specific Windows USB device to WSL by BUSID
+cmd_attach() {
+    local busid="$1"
+    
+    if [ -z "$busid" ]; then
+        log_error "BUSID não especificado"
+        log_hint "Uso: bkp-pendrive attach <BUSID>"
+        log_hint "Execute 'bkp-pendrive list' para ver os BUSIDs disponíveis"
+        return 1
+    fi
+    
+    print_step "Anexando dispositivo $busid ao WSL..."
+    
+    if ! require_usbipd; then
+        return 1
+    fi
+    
+    # Try to attach
+    log_info "Executando: usbipd attach --wsl --busid $busid"
+    
+    local result
+    result=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1)
+    
+    if echo "$result" | grep -qi "error\|denied\|not shared"; then
+        log_error "Falha ao anexar dispositivo"
+        if echo "$result" | grep -qi "not shared"; then
+            log_warn "Dispositivo precisa ser compartilhado primeiro"
+            echo
+            log_info "Execute no PowerShell como ADMIN:"
+            echo -e "    ${BOLD}usbipd bind --busid $busid${NC}"
+            echo
+            log_info "Depois tente novamente: bkp-pendrive attach $busid"
+        fi
+        return 1
+    fi
+    
+    # Wait for device to appear
+    log_info "Aguardando dispositivo aparecer no WSL..."
+    sleep 3
+    
+    log_success "Dispositivo $busid anexado ao WSL"
+    log_hint "Execute 'bkp-pendrive list' para verificar"
+    return 0
+}
+
 # =========================
 # Main
 # =========================
@@ -248,6 +297,9 @@ case "$COMMAND" in
         ;;
     check)
         run_health_check
+        ;;
+    attach)
+        cmd_attach "$BUSID_ARG"
         ;;
     help|"")
         show_help

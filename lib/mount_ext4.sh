@@ -115,12 +115,59 @@ list_available_devices() {
     echo
     
     if [ $count -eq 0 ]; then
-        log_warn "Nenhum dispositivo USB de armazenamento encontrado"
-        log_hint "Verifique se os dispositivos estão anexados ao WSL: bkp-pendrive check"
-        return 1
+        log_warn "Nenhum dispositivo USB anexado ao WSL"
+    else
+        echo -e "  ${BOLD}Total no WSL: $count dispositivo(s)${NC}"
     fi
     
-    echo -e "  ${BOLD}Total: $count dispositivo(s)${NC}"
+    # Also show Windows USB storage devices that can be attached
+    echo -e "\n${CYAN}▶${NC} ${BOLD}Dispositivos USB no Windows (disponíveis para anexar)${NC}\n"
+    
+    local win_count=0
+    
+    # Filter only lines starting with BUSID pattern, and filter storage devices
+    while IFS= read -r line; do
+        local busid vidpid desc state
+        
+        # Parse line components
+        busid=$(echo "$line" | awk '{print $1}')
+        
+        # Skip lines that don't have BUSID format (X-Y pattern)
+        [[ ! "$busid" =~ ^[0-9]+-[0-9]+$ ]] && continue
+        
+        vidpid=$(echo "$line" | awk '{print $2}')
+        state=$(echo "$line" | awk '{print $NF}')
+        
+        # Skip if already attached
+        [[ "$state" == "Attached" ]] && continue
+        
+        # Get device name (truncate if too long)
+        desc=$(echo "$line" | awk '{for(i=3;i<NF;i++) printf "%s ", $i; print ""}' | cut -c1-45)
+        
+        # Display with proper formatting
+        local status_text
+        if [[ "$state" == "Shared" ]]; then
+            status_text="${GREEN}✓ Pronto${NC}"
+        else
+            status_text="${YELLOW}⚠ Bind first${NC}"
+        fi
+        
+        echo -e "  ${BOLD}$busid${NC}  $desc  $status_text"
+        ((win_count++)) || true
+        
+    done < <(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' list" 2>/dev/null | grep -i "Mass Storage\|Armazenamento\|UAS\|SCSI" || true)
+    
+    echo
+    
+    if [ $win_count -gt 0 ]; then
+        echo -e "  ${BOLD}Para anexar:${NC} bkp-pendrive attach <BUSID>"
+        echo -e "  ${BOLD}Exemplo:${NC} bkp-pendrive attach 2-16"
+    else
+        if [ $count -eq 0 ]; then
+            log_hint "Conecte um dispositivo USB ou verifique 'usbipd list' no Windows"
+        fi
+    fi
+    
     echo
     return 0
 }
