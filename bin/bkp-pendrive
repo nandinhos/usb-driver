@@ -132,10 +132,10 @@ cmd_up() {
         log_warn "Dispositivo nao encontrado no WSL."
         log_info "Tentando anexar automaticamente via usbipd..."
         
-        # Find USB Mass Storage device in usbipd list and get its BUSID
+        # Find USB Mass Storage/UAS device in usbipd list and get its BUSID
         local busid
         busid=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' list" 2>/dev/null | \
-            grep -i "Mass Storage\|Armazenamento" | \
+            grep -i "Mass Storage\|Armazenamento\|UAS\|SCSI" | \
             head -1 | \
             awk '{print $1}')
         
@@ -166,8 +166,8 @@ cmd_up() {
                 powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1
             fi
             
-            # Wait a moment for device to appear
-            sleep 2
+            # Wait a moment for device to appear (HDDs act slower than flash drives)
+            sleep 5
             
             # Try detection again
             if [ -n "$PENDRIVE_LABEL" ]; then
@@ -180,7 +180,7 @@ cmd_up() {
     fi
     
     if [ -z "$device" ]; then
-        log_error "Nenhum dispositivo USB encontrado no WSL."
+        log_error "Nenhum dispositivo de armazenamento encontrado no WSL."
         echo
         log_info "Tente manualmente no PowerShell (Admin):"
         log_info "  usbipd list"

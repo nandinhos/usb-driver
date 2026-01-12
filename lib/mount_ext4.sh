@@ -5,14 +5,29 @@
 # Supported filesystems
 SUPPORTED_FS="ext4|ntfs|vfat|exfat|fuseblk"
 
-# Detect any removable USB device
+# Detect any removable USB device or External HD
 detect_usb_device() {
     local device
-    # Find removable devices with a recognized filesystem
-    device=$(lsblk -rpno NAME,FSTYPE,RM,TYPE | awk -v fs="$SUPPORTED_FS" '
-        $3=="1" && $4=="disk" && $2 ~ fs {print $1; exit}
-        $3=="1" && $4=="part" && $2 ~ fs {print $1; exit}
+    # Strategy 1: Removable devices (Pendrives)
+    device=$(lsblk -rpno NAME,FSTYPE,RM,TYPE,TRAN | awk -v fs="$SUPPORTED_FS" '
+        $3=="1" && $2 ~ fs {print $1; exit}
     ')
+    
+    # Strategy 2: USB transport devices (External HDs often appear as RM=0 but TRAN=usb)
+    if [ -z "$device" ]; then
+        device=$(lsblk -rpno NAME,FSTYPE,TRAN,TYPE | awk -v fs="$SUPPORTED_FS" '
+            $3=="usb" && $4=="part" && $2 ~ fs {print $1; exit}
+            $3=="usb" && $4=="disk" && $2 ~ fs {print $1; exit}
+        ')
+    fi
+    
+    # Strategy 3: Just find the most recent SD device (fallback)
+    if [ -z "$device" ]; then
+        # Last added sdX device that supports one of our filesystems
+        device=$(lsblk -rpno NAME,FSTYPE | grep -E "sd[a-z][0-9]?" | awk -v fs="$SUPPORTED_FS" '
+            $2 ~ fs {print $1}
+        ' | tail -n1)
+    fi
     
     if [ -z "$device" ]; then
         return 1
@@ -68,11 +83,23 @@ mount_ext4() {
             ;;
         ntfs|fuseblk)
             # NTFS needs ntfs-3g for write support
+            if ! command -v ntfs-3g &>/dev/null; then
+                log_warn "O driver 'ntfs-3g' é necessário para montar este dispositivo."
+                echo
+                log_info "Abra outro terminal e execute:"
+                echo -e "    ${BOLD}sudo apt update && sudo apt install ntfs-3g${NC}"
+                echo
+                echo "=========================================="
+                echo "  Pressione ENTER após instalar..."
+                echo "=========================================="
+                read -r
+            fi
+            
             if command -v ntfs-3g &>/dev/null; then
                 sudo ntfs-3g "$device" "$mount_point" -o rw,uid=$(id -u),gid=$(id -g)
             else
-                sudo mount -t ntfs-3g "$device" "$mount_point" -o rw 2>/dev/null || \
-                sudo mount "$device" "$mount_point"
+                log_error "Driver ntfs-3g ainda não encontrado. Abortando."
+                return 1
             fi
             ;;
         vfat|exfat)

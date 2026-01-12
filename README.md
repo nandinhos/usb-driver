@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>🔌 Ferramenta CLI para montar pendrives USB no WSL2</strong>
+  <strong>🔌 Ferramenta CLI para montar Pendrives e HDs Externos no WSL2</strong>
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 
 ## 📋 Sobre
 
-O **bkp-pendrive** resolve um problema comum para desenvolvedores que usam WSL2: montar pendrives USB formatados em **EXT4**, **NTFS**, **FAT32** ou **exFAT** diretamente no Linux, sem precisar acessar via `/mnt/c/`.
+O **bkp-pendrive** resolve um problema comum para desenvolvedores que usam WSL2: montar dispositivos de armazenamento USB (**Pendrives** e **HDs Externos**) formatados em **EXT4**, **NTFS**, **FAT32** ou **exFAT** diretamente no Linux, sem precisar acessar via `/mnt/c/`.
 
 ### ✨ Funcionalidades
 
@@ -37,10 +37,17 @@ O **bkp-pendrive** resolve um problema comum para desenvolvedores que usam WSL2:
 1. **Windows 11** (ou Windows 10 com WSL2)
 2. **WSL2** com uma distribuição Linux (Ubuntu recomendado)
 3. **usbipd-win** instalado no Windows
+4. **NTFS-3G** instalado no Linux (para suporte a escrita em discos NTFS)
 
 #### Instalar usbipd-win (PowerShell como Admin):
 ```powershell
 winget install usbipd
+```
+
+#### Instalar drivers NTFS (no Linux usando WSL):
+Para garantir suporte a escrita em discos NTFS, instale o driver apropriado:
+```bash
+sudo apt update && sudo apt install ntfs-3g
 ```
 
 ### Instalação do bkp-pendrive
@@ -67,10 +74,10 @@ O instalador irá:
 ### Comandos básicos
 
 ```bash
-# Montar pendrive
+# Montar dispositivo
 bkp-pendrive up
 
-# Desmontar pendrive
+# Desmontar dispositivo
 bkp-pendrive down
 
 # Verificar status
@@ -87,9 +94,11 @@ bkp-pendrive --simulate up
 bkp-pendrive --simulate down
 ```
 
-### Primeiro uso de um novo pendrive
+### Primeiro uso (Semi-automático)
 
-Na primeira vez que usar um pendrive novo, será necessário executar `usbipd bind` no Windows como Administrador. O script irá guiá-lo automaticamente:
+Para conectar um dispositivo USB (Pendrive ou HD Externo) ao WSL2 via `usbipd`, é necessário permissão de Administrador no Windows **apenas na primeira vez** (para o comando `bind`).
+
+O script tentará automatizar tudo, mas se precisar de permissão, ele exibirá o comando exato para você copiar e colar:
 
 ```
 [WARN] Dispositivo precisa ser registrado (bind) no Windows.
@@ -97,13 +106,16 @@ Na primeira vez que usar um pendrive novo, será necessário executar `usbipd bi
 ==========================================
   Execute no PowerShell como ADMIN:
 
-    usbipd bind --busid 2-3
+    usbipd bind --busid 2-3 (ou usbipd bind --busid <BUSID>)
+
 
   Após executar, pressione ENTER...
 ==========================================
 ```
 
-Depois do bind inicial, o pendrive funcionará automaticamente.
+Depois do bind inicial, o dispositivo funcionará automaticamente.
+
+> **Nota:** Recomenda-se manter apenas **um** dispositivo de armazenamento externo conectado por vez para garantir a detecção automática correta.
 
 ---
 
@@ -113,7 +125,7 @@ A configuração é salva em `~/.config/bkp-pendrive/config`:
 
 ```bash
 MOUNT_POINT="/mnt/bkp-pendrive"
-PENDRIVE_LABEL="MeuPendrive"
+PENDRIVE_LABEL="MeuDispositivo"
 ```
 
 ### Reinstalar/Reconfigurar
