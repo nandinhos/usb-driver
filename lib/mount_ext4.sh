@@ -246,8 +246,17 @@ list_available_devices() {
         
         busid=$(echo "$line" | awk '{print $1}')
         [[ ! "$busid" =~ ^[0-9]+-[0-9]+$ ]] && continue
-        
-        state=$(echo "$line" | awk '{print $NF}')
+
+        if echo "$line" | grep -qi "Attached"; then
+            state="Attached"
+        elif echo "$line" | grep -qi "Not shared"; then
+            state="NotShared"
+        elif echo "$line" | grep -qi "Shared"; then
+            state="Shared"
+        else
+            # Default state extraction if none of above matches perfectly
+            state=$(echo "$line" | awk '{print $NF}')
+        fi
         
         # Skip if already attached
         [[ "$state" == "Attached" ]] && continue
@@ -320,7 +329,7 @@ mount_ext4() {
     
     # Check if already mounted
     if mountpoint -q "$mount_point" 2>/dev/null; then
-        log_warn "Já existe algo montado em $mount_point"
+        log_warn "Já existe algo montado em ${YELLOW}${MOUNT_POINT}/${NC}${CYAN}$(basename $mount_point)${NC}"
         return 1
     fi
     
@@ -328,7 +337,7 @@ mount_ext4() {
     local current_mnt
     current_mnt=$(findmnt -rpno TARGET "$device" 2>/dev/null | head -1)
     if [ -n "$current_mnt" ]; then
-        log_warn "O dispositivo $device já está montado em $current_mnt"
+        log_warn "O dispositivo ${CYAN}$device${NC} já está montado em ${YELLOW}$current_mnt${NC}"
         return 1
     fi
     
@@ -361,7 +370,7 @@ mount_ext4() {
         return 1
     fi
     
-    log_success "Pendrive montado em $mount_point ($fstype)"
+    log_success "Pendrive montado em ${YELLOW}${MOUNT_POINT}/${NC}${CYAN}$(basename $mount_point)${NC} ($fstype)"
     return 0
 }
 

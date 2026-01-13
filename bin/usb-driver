@@ -169,7 +169,16 @@ select_usb_device() {
         [[ ! "$busid" =~ ^[0-9]+-[0-9]+$ ]] && continue
         
         vidpid=$(echo "$line" | awk '{print $2}')
-        state=$(echo "$line" | awk '{print $NF}')
+        if echo "$line" | grep -qi "Attached"; then
+            state="Attached"
+        elif echo "$line" | grep -qi "Not shared"; then
+            state="NotShared"
+        elif echo "$line" | grep -qi "Shared"; then
+            state="Shared"
+        else
+            state=$(echo "$line" | awk '{print $NF}')
+        fi
+        
         desc=$(echo "$line" | awk '{for(j=3;j<NF;j++) printf "%s ", $j}' | cut -c1-45)
 
         if [[ "$state" == "Attached" ]]; then
@@ -180,15 +189,15 @@ select_usb_device() {
             
             if [ -n "$wsl_dev" ]; then
                 options+=("wsl|$wsl_dev|$vidpid")
-                echo -e "  ${BOLD}[$i]${NC} $wsl_dev (Já no WSL) - $desc" >&2
+                echo -e "  ${BOLD}[$i]${NC} ${YELLOW}$wsl_dev${NC} ${GREEN}(Já no WSL)${NC} - $desc" >&2
             else
                 # Fallback to win type if WSL detection is tricky, but it's attached
                 options+=("win|$busid|$vidpid")
-                echo -e "  ${BOLD}[$i]${NC} $busid (Anexado) - $desc" >&2
+                echo -e "  ${BOLD}[$i]${NC} ${YELLOW}$busid${NC} ${GREEN}(Anexado)${NC} - $desc" >&2
             fi
         else
             options+=("win|$busid|$vidpid")
-            echo -e "  ${BOLD}[$i]${NC} $busid (Windows) - $desc" >&2
+            echo -e "  ${BOLD}[$i]${NC} ${YELLOW}$busid${NC} (Windows) - $desc" >&2
         fi
         ((i++)) || true
         
@@ -231,7 +240,7 @@ select_usb_device() {
 }
 cmd_up() {
     print_step "Iniciando montagem do dispositivo..."
-    log_info "usb-driver v0.6.2 - Iniciando montagem"
+    log_info "usb-driver v0.6.6 - Iniciando montagem"
     
     # 1. Health check (basics)
     health_check_wsl || exit 1
@@ -279,18 +288,32 @@ cmd_up() {
         if echo "$attach_output" | grep -qiE "not shared|bind"; then
             # Device needs to be bound first (requires admin)
             echo
-            log_warn "Dispositivo precisa ser registrado (bind) no Windows."
-            log_info "Solicitação de acesso UAC no Windows... (pode demorar alguns segundos)"
-            
+            # Try to detach first to clear any stuck sessions
+            powershell.exe -NoProfile -Command "& '$USBIPD_EXE' detach --busid $busid" 2>/dev/null || true
+
             # Use PowerShell to start-process with RunAs (triggers UAC)
-            # We use -Wait to ensure the bind is finished before we try attach again
-            powershell.exe -NoProfile -Command "Start-Process -FilePath \"$USBIPD_EXE\" -ArgumentList \"bind\", \"--busid\", \"$busid\" -Verb RunAs -Wait" 2>/dev/null
+            powershell.exe -NoProfile -Command "Start-Process -FilePath \"$USBIPD_EXE\" -ArgumentList \"bind\", \"--busid\", \"$busid\", \"--force\" -Verb RunAs -Wait" 2>/dev/null
             
-            log_info "Autorização concluída. Prosseguindo..."
+            log_info "Autorização concluída. Aguardando estabilização (5s)..."
+            sleep 5
             
-            # Try attach again
+            # Try attach again with a mini-retry loop
             log_info "Tentando anexar novamente..."
-            powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1
+            local a_retry=0
+            while [ $a_retry -lt 3 ]; do
+                attach_output=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1 || true)
+                if echo "$attach_output" | grep -qi "success\|already\|Attached"; then
+                    break
+                fi
+                if echo "$attach_output" | grep -qi "busy"; then
+                    log_warn "Dispositivo ocupado no Windows. Nova tentativa em 3s... ($((a_retry+1))/3)"
+                    sleep 3
+                else
+                    echo "$attach_output"
+                    break
+                fi
+                ((a_retry++)) || true
+            done
         fi
         
         # Wait for device to appear in WSL (with a retry loop)
@@ -359,10 +382,12 @@ cmd_down() {
         local i=1
         for mnt in "${active_mounts[@]}"; do
             local dev=$(findmnt -n -o SOURCE "$mnt")
-            echo -e "  ${BOLD}[$i]${NC} $mnt ($dev)" >&2
+            local folder_name=$(basename "$mnt")
+            local base_path=$(dirname "$mnt")
+            echo -e "  ${BOLD}[$i]${NC} ${YELLOW}${base_path}/${NC}${CYAN}${folder_name}${NC} (${dev})" >&2
             ((i++))
         done
-        echo -e "  ${BOLD}[a]${NC} Desmontar TODOS" >&2
+        echo -e "  ${BOLD}[a]${NC} Desmontar ${RED}TODOS${NC}" >&2
         echo >&2
         echo -n "  Escolha o que desmontar (ou 'q' para sair): " >&2
         read -r choice < /dev/tty
@@ -374,6 +399,7 @@ cmd_down() {
             done
             return 0
         elif [ "$choice" = "q" ]; then
+            echo -e "\n${GREEN}✓${NC} Até mais! Seus dispositivos permanecem montados." >&2
             return 0
         elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#active_mounts[@]} ]; then
             safe_unmount "${active_mounts[$((choice-1))]}" "${EXTRA_FLAGS[@]}"
@@ -452,7 +478,7 @@ cmd_attach() {
             log_warn "Dispositivo precisa ser compartilhado primeiro"
             echo
             log_info "Execute no PowerShell como ADMIN:"
-            echo -e "    ${BOLD}usbipd bind --busid $busid${NC}"
+            echo -e "    ${BOLD}usbipd bind --busid $busid --force${NC}"
             echo
             log_info "Depois tente novamente: usb-driver attach $busid"
         fi
