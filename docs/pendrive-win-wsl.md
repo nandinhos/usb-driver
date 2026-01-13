@@ -1,6 +1,6 @@
 # 📘 Documento Executivo
 
-## Projeto **bkp-pendrive**
+## Projeto **usb-driver**
 
 **Autor:** Nando Dev
 **Versão:** 1.1.0 (em construção)
@@ -11,7 +11,7 @@
 
 ## 1. Visão Geral do Projeto
 
-O **bkp-pendrive** é uma ferramenta de automação desenvolvida para permitir o **uso seguro, simples e padronizado de pendrives formatados em EXT4** no ambiente **Windows 11**, através do **WSL2**.
+O **usb-driver** é uma ferramenta de automação desenvolvida para permitir o **uso seguro, simples e padronizado de pendrives formatados em EXT4** no ambiente **Windows 11**, através do **WSL2**.
 
 O projeto nasceu da necessidade real de desenvolvedores que:
 
@@ -54,7 +54,7 @@ O foco do projeto **não é apenas montar um pendrive**, mas **criar um fluxo de
 
 ## 3. Objetivo do Projeto
 
-O **bkp-pendrive** foi projetado para:
+O **usb-driver** foi projetado para:
 
 ✔ Automatizar o acesso a pendrives EXT4 no WSL
 ✔ Eliminar etapas manuais perigosas
@@ -82,7 +82,7 @@ O projeto segue princípios claros:
 * Um único comando:
 
   ```bash
-  bkp-pendrive up
+  usb-driver up
   ```
 * Sem necessidade de memorizar:
 
@@ -111,7 +111,7 @@ O projeto segue princípios claros:
 
 ```
 ┌─────────────────────────────┐
-│ Usuário (CLI bkp-pendrive)  │
+│ Usuário (CLI usb-driver)  │
 └───────────────┬─────────────┘
                 │
 ┌───────────────▼─────────────┐
@@ -137,7 +137,7 @@ O projeto segue princípios claros:
 ### 6.1 Subir (Montar)
 
 ```bash
-bkp-pendrive up
+usb-driver up
 ```
 
 1. Windows:
@@ -162,7 +162,7 @@ Operação normal de leitura e escrita.
 ### 6.3 Descer (Desmontar)
 
 ```bash
-bkp-pendrive down
+usb-driver down
 ```
 
 1. Desmonta filesystem
@@ -226,7 +226,7 @@ Essas limitações são **decisões conscientes de design**, não falhas.
 
 ## 11. Conclusão
 
-O **bkp-pendrive** não é apenas um conjunto de scripts.
+O **usb-driver** não é apenas um conjunto de scripts.
 
 Ele é uma **solução prática para um problema real**, criada a partir de experiência de campo, focada em:
 

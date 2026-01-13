@@ -1,4 +1,4 @@
-# bkp-pendrive
+# usb-driver
 
 Ferramenta modular para automação de backup em pendrives EXT4 no WSL2.
 

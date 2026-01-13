@@ -1,4 +1,4 @@
-# Contribuindo para o bkp-pendrive
+# Contribuindo para o usb-driver
 
 Obrigado por considerar contribuir! 🎉
 
@@ -66,13 +66,13 @@ Antes de enviar um PR, teste:
 ./scripts/install.sh --check
 
 # Testar modo simulação
-bkp-pendrive --simulate up
-bkp-pendrive --simulate down
+usb-driver --simulate up
+usb-driver --simulate down
 
 # Testar com pendrive real (se disponível)
-bkp-pendrive up
-bkp-pendrive status
-bkp-pendrive down
+usb-driver up
+usb-driver status
+usb-driver down
 ```
 
 ## Dúvidas?

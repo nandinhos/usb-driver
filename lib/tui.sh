@@ -1,5 +1,5 @@
 #!/bin/bash
-# lib/tui.sh - Terminal UI helpers for bkp-pendrive
+# lib/tui.sh - Terminal UI helpers for usb-driver
 
 # =========================
 # Colors (with terminal detection)
@@ -33,7 +33,7 @@ print_step()    { echo -e "\n${CYAN}▶${NC} ${BOLD}$1${NC}"; }
 print_banner() {
     echo -e "${CYAN}"
     echo "╔══════════════════════════════════════╗"
-    echo "║        bkp-pendrive Installer        ║"
+    echo "║        usb-driver Installer        ║"
     echo "║     Pendrive EXT4 no WSL2            ║"
     echo "╚══════════════════════════════════════╝"
     echo -e "${NC}"

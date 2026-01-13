@@ -1,5 +1,5 @@
 #!/bin/bash
-# lib/checks.sh - Environment validation for bkp-pendrive
+# lib/checks.sh - Environment validation for usb-driver
 
 # =========================
 # Basic Checks
@@ -67,7 +67,7 @@ health_check_ntfs3g() {
 
 # Check mount point configuration
 health_check_mount_point() {
-    local mount_point="${MOUNT_POINT:-/mnt/bkp-pendrive}"
+    local mount_point="${MOUNT_POINT:-/mnt/usb-driver}"
     
     if [ -d "$mount_point" ]; then
         if mountpoint -q "$mount_point" 2>/dev/null; then
@@ -100,7 +100,7 @@ health_check_usb_device() {
         
         if [ "$win_devices" -gt 0 ]; then
             log_warn "Dispositivo USB no Windows, mas não anexado ao WSL"
-            log_hint "Execute: bkp-pendrive up"
+            log_hint "Execute: usb-driver up"
             return 1
         else
             log_warn "Nenhum dispositivo USB de armazenamento conectado"
@@ -113,7 +113,7 @@ health_check_usb_device() {
 run_health_check() {
     local errors=0
     
-    echo -e "\n${CYAN}▶${NC} ${BOLD}Verificando ambiente bkp-pendrive...${NC}\n"
+    echo -e "\n${CYAN}▶${NC} ${BOLD}Verificando ambiente usb-driver...${NC}\n"
     
     health_check_wsl || ((errors++))
     health_check_usbipd || ((errors++))

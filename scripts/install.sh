@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bkp-pendrive Installer Wizard
+# usb-driver Installer Wizard
 set -e
 
 # =========================
@@ -38,7 +38,7 @@ print_step()    { echo -e "\n${CYAN}▶${NC} ${BOLD}$1${NC}"; }
 print_banner() {
     echo ""
     echo -e "${CYAN}╔═══════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}  ${BOLD}bkp-pendrive${NC} Installer   ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  ${BOLD}usb-driver${NC} Installer   ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  Pendrive USB no WSL2     ${CYAN}║${NC}"
     echo -e "${CYAN}╚═══════════════════════════╝${NC}"
     echo ""
@@ -47,15 +47,15 @@ print_banner() {
 # =========================
 # Config
 # =========================
-PROJECT_NAME="bkp-pendrive"
+PROJECT_NAME="usb-driver"
 BIN_PATH="$PROJECT_ROOT/bin/$PROJECT_NAME"
 LIB_DIR="$PROJECT_ROOT/lib"
-CONFIG_DIR="$HOME/.config/bkp-pendrive"
+CONFIG_DIR="$HOME/.config/usb-driver"
 CONFIG_FILE="$CONFIG_DIR/config"
 SYMLINK="/usr/local/bin/$PROJECT_NAME"
 
 # Defaults
-DEFAULT_MOUNT_POINT="/mnt/bkp-pendrive"
+DEFAULT_MOUNT_POINT="/mnt/usb-driver"
 DEFAULT_LABEL=""
 
 # Modes
@@ -225,7 +225,7 @@ main() {
     # Write config
     if ! $CHECK_ONLY && ! $DRY_RUN; then
         cat > "$CONFIG_FILE" << EOF
-# bkp-pendrive configuration
+# usb-driver configuration
 MOUNT_POINT="$MOUNT_POINT"
 PENDRIVE_LABEL="$PENDRIVE_LABEL"
 EOF
@@ -262,10 +262,10 @@ EOF
         echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
         echo
         echo "Uso:"
-        echo "  bkp-pendrive up       # Monta o pendrive"
-        echo "  bkp-pendrive down     # Desmonta"
-        echo "  bkp-pendrive status   # Verifica status"
-        echo "  bkp-pendrive --simulate up  # Testa sem hardware"
+        echo "  usb-driver up       # Monta o pendrive"
+        echo "  usb-driver down     # Desmonta"
+        echo "  usb-driver status   # Verifica status"
+        echo "  usb-driver --simulate up  # Testa sem hardware"
     fi
 }
 

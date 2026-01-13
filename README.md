@@ -1,4 +1,4 @@
-# bkp-pendrive
+# usb-driver
 
 <p align="center">
   <img src="img/nando-dev-logo.png" alt="NandoDev Logo" width="200"/>
@@ -18,14 +18,14 @@
 
 ## 📋 Sobre
 
-O **bkp-pendrive** resolve um problema comum para desenvolvedores que usam WSL2: montar dispositivos de armazenamento USB (**Pendrives** e **HDs Externos**) formatados em **EXT4**, **NTFS**, **FAT32** ou **exFAT** diretamente no Linux, sem precisar acessar via `/mnt/c/`.
+O **usb-driver** resolve um problema comum para desenvolvedores que usam WSL2: montar dispositivos de armazenamento USB (**Pendrives** e **HDs Externos**) formatados em **EXT4**, **NTFS**, **FAT32** ou **exFAT** diretamente no Linux, sem precisar acessar via `/mnt/c/`.
 
 ### ✨ Funcionalidades
 
 - 🔄 **Semi-Auto-attach** via `usbipd-win` - anexa o USB ao WSL mediante autorização do usuário no PowerShell como Admin
 - 📁 **Multi-filesystem** - suporta EXT4, NTFS, FAT32, exFAT
 - 🎨 **Interface colorida** - output amigável com cores ANSI
-- ⚡ **Simples de usar** - apenas `bkp-pendrive up` e `down`
+- ⚡ **Simples de usar** - apenas `usb-driver up` e `down`
 - 🧪 **Modo simulação** - teste sem hardware com `--simulate`
 
 ---
@@ -50,12 +50,12 @@ Para garantir suporte a escrita em discos NTFS, instale o driver apropriado:
 sudo apt update && sudo apt install ntfs-3g
 ```
 
-### Instalação do bkp-pendrive
+### Instalação do usb-driver
 
 ```bash
 # Clone o repositório
-git clone https://github.com/seu-usuario/bkp-pendrive.git
-cd bkp-pendrive
+git clone https://github.com/seu-usuario/usb-driver.git
+cd usb-driver
 
 # Execute o instalador
 ./scripts/install.sh
@@ -75,23 +75,23 @@ O instalador irá:
 
 ```bash
 # Montar dispositivo
-bkp-pendrive up
+usb-driver up
 
 # Desmontar dispositivo
-bkp-pendrive down
+usb-driver down
 
 # Verificar status
-bkp-pendrive status
+usb-driver status
 
 # Ajuda
-bkp-pendrive help
+usb-driver help
 ```
 
 ### Modo simulação (para testes)
 
 ```bash
-bkp-pendrive --simulate up
-bkp-pendrive --simulate down
+usb-driver --simulate up
+usb-driver --simulate down
 ```
 
 ### Primeiro uso (Semi-automático)
@@ -121,17 +121,17 @@ Depois do bind inicial, o dispositivo funcionará automaticamente.
 
 ## ⚙️ Configuração
 
-A configuração é salva em `~/.config/bkp-pendrive/config`:
+A configuração é salva em `~/.config/usb-driver/config`:
 
 ```bash
-MOUNT_POINT="/mnt/bkp-pendrive"
+MOUNT_POINT="/mnt/usb-driver"
 PENDRIVE_LABEL="MeuDispositivo"
 ```
 
 ### Reinstalar/Reconfigurar
 
 ```bash
-cd ~/projects/bkp-pendrive
+cd ~/projects/usb-driver
 ./scripts/install.sh
 ```
 
@@ -140,9 +140,9 @@ cd ~/projects/bkp-pendrive
 ## 🏗️ Estrutura do Projeto
 
 ```
-bkp-pendrive/
+usb-driver/
 ├── bin/
-│   └── bkp-pendrive      # CLI principal
+│   └── usb-driver      # CLI principal
 ├── lib/
 │   ├── logging.sh        # Funções de log colorido
 │   ├── tui.sh            # Helpers de interface
@@ -153,7 +153,7 @@ bkp-pendrive/
 │   ├── install.sh        # Wizard de instalação
 │   └── uninstall.sh      # Desinstalador
 ├── config/
-│   └── bkp-pendrive.conf # Configuração padrão
+│   └── usb-driver.conf # Configuração padrão
 └── docs/
     └── README.md
 ```

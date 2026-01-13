@@ -1,0 +1,507 @@
+#!/usr/bin/env bash
+# usb-driver - CLI for mounting EXT4 USB drives in WSL2
+set -e
+
+# =========================
+# Resolve paths (follow symlinks)
+# =========================
+get_real_path() {
+    local path="$1"
+    # Follow symlink to absolute path
+    readlink -f "$path"
+}
+
+REAL_SCRIPT=$(get_real_path "${BASH_SOURCE[0]}")
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# =========================
+# Source libraries
+# =========================
+source "$PROJECT_ROOT/lib/logging.sh"
+source "$PROJECT_ROOT/lib/tui.sh"
+source "$PROJECT_ROOT/lib/checks.sh"
+source "$PROJECT_ROOT/lib/usbipd.sh"
+source "$PROJECT_ROOT/lib/mount_ext4.sh"
+
+# =========================
+# Load config
+# =========================
+CONFIG_FILE="$HOME/.config/usb-driver/config"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+fi
+
+# =========================
+# Config Migration (v0.6.0+)
+# =========================
+if [ -d "$HOME/.config/bkp-pendrive" ] && [ ! -d "$HOME/.config/usb-driver" ]; then
+    log_warn "Migrando diretório de configuração: bkp-pendrive -> usb-driver"
+    mv "$HOME/.config/bkp-pendrive" "$HOME/.config/usb-driver"
+    log_success "Diretório de configuração atualizado."
+fi
+
+# Defaults
+MOUNT_POINT="${MOUNT_POINT:-/mnt/usb-driver}"
+
+# =========================
+# Legacy Migration (v0.5.1+)
+# =========================
+if [ "$MOUNT_POINT" = "/mnt/bkp-pendrive" ]; then
+    log_warn "Migrando caminho legado: /mnt/bkp-pendrive -> /mnt/usb-driver"
+    
+    # Update current session
+    MOUNT_POINT="/mnt/usb-driver"
+    
+    # Update config file if exists
+    if [ -f "$CONFIG_FILE" ]; then
+        sed -i 's|MOUNT_POINT="/mnt/bkp-pendrive"|MOUNT_POINT="/mnt/usb-driver"|' "$CONFIG_FILE"
+        log_success "Configuração atualizada para o novo padrão."
+    fi
+    
+    # Try to remove old empty directory if possible
+    if [ -d "/mnt/bkp-pendrive" ] && ! mountpoint -q "/mnt/bkp-pendrive" 2>/dev/null; then
+        sudo rmdir "/mnt/bkp-pendrive" 2>/dev/null || true
+    fi
+fi
+PENDRIVE_LABEL="${PENDRIVE_LABEL:-}"
+SIMULATE_MODE=false
+
+# =========================
+# Version
+# =========================
+VERSION=$(cat "$PROJECT_ROOT/VERSION" 2>/dev/null || echo "dev")
+
+# =========================
+# Help
+# =========================
+show_help() {
+    echo -e "${CYAN}${BOLD}"
+    echo -e "  _   _  ____  ____        ____   ____   ___ _     _ _____ ____  "
+    echo -e " | | | |/ ___|| __ )      |  _ \\ |  _ \\ |_ _\\ \\   / / ____|  _ \\ "
+    echo -e " | | | |\\___ \\|  _ \\ _____| | | || |_) | | | \\ \\ / /|  _| | |_) |"
+    echo -e " | |_| | ___) | |_) |_____| |_| ||  _ <  | |  \\ V / | |___|  _ < "
+    echo -e "  \\___/ |____/|____/      |____/ |_| \\_\\|___|  \\_/  |_____|_| \\_\\"
+    echo -e "${NC}"
+    echo -e "                                         ${DIM}Version $VERSION${NC}"
+    echo
+    log_info "Simplifying USB storage management in WSL2"
+    echo
+    echo -e "${YELLOW}${BOLD}USO:${NC}"
+    echo -e "  ${BOLD}usb-driver${NC} <comando> [opções]"
+    echo
+    echo -e "${YELLOW}${BOLD}COMANDOS:${NC}"
+    echo -e "  ${GREEN}up, mount${NC}       Anexa e monta os dispositivos detectados"
+    echo -e "  ${GREEN}down, unmount${NC}   Desmonta dispositivos gerenciados"
+    echo -e "  ${GREEN}status${NC}          Mostra o estado atual das montagens"
+    echo -e "  ${GREEN}list${NC}            Lista dispositivos USB (WSL + Windows)"
+    echo -e "  ${GREEN}attach <ID>${NC}     Anexa um BUSID específico do Windows ao WSL"
+    echo -e "  ${GREEN}check${NC}           Verifica a integridade do ambiente"
+    echo -e "  ${GREEN}help${NC}            Exibe este manual"
+    echo
+    echo -e "${YELLOW}${BOLD}OPÇÕES:${NC}"
+    echo -e "  ${CYAN}--select, -s${NC}    Escolhe o dispositivo manualmente no ${DIM}up${NC}"
+    echo -e "  ${CYAN}--all, -a${NC}       Monta todos os dispositivos sem perguntar"
+    echo -e "  ${CYAN}--force${NC}         Força desmontagem mesmo sob uso"
+    echo -e "  ${CYAN}--eject${NC}         Ejeta do WSL após desmontar"
+    echo -e "  ${CYAN}--simulate${NC}      Executa em modo de demonstração"
+    echo
+    echo -e "${YELLOW}${BOLD}EXEMPLOS:${NC}"
+    echo -e "  ${DIM}# Montar tudo automaticamente:${NC}"
+    echo -e "  ${BOLD}usb-driver up${NC}"
+    echo
+    echo -e "  ${DIM}# Desmontar um dispositivo específico:${NC}"
+    echo -e "  ${BOLD}usb-driver down${NC}"
+    echo
+    echo -e "  ${DIM}# Verificar onde os arquivos estão:${NC}"
+    echo -e "  ${BOLD}ls $MOUNT_POINT${NC}"
+    echo
+    echo -e "${DIM}------------------------------------------------------------${NC}"
+    echo -e "${DIM}Distribuído sob licença MIT. Desenvolvido para a comunidade.${NC}"
+}
+
+# =========================
+# Parse args
+# =========================
+COMMAND=""
+BUSID_ARG=""
+SELECT_MODE=false
+EXTRA_FLAGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --simulate)
+            SIMULATE_MODE=true
+            ;;
+        --force|--eject)
+            EXTRA_FLAGS+=("$arg")
+            ;;
+        --select|-s)
+            SELECT_MODE=true
+            ;;
+        *)
+            if [ -z "$COMMAND" ]; then
+                COMMAND="$arg"
+            elif [ -z "$BUSID_ARG" ]; then
+                BUSID_ARG="$arg"
+            fi
+            ;;
+    esac
+done
+
+# =========================
+# Commands
+# =========================
+
+# Interactive device selection - shows menu and returns info
+# Returns format: "type:id:vidpid" (e.g., "wsl:/dev/sdh1:04e8:6860" or "win:2-16:04e8:6860")
+select_usb_device() {
+    # Print menu to stderr so it shows on screen
+    echo -e "\n${CYAN}▶${NC} ${BOLD}Selecione o dispositivo USB para montar:${NC}\n" >&2
+    
+    local options=()
+    local i=1
+    
+    # 1. Get ALL storage devices from Windows (The primary source of truth)
+    # We display them, and if they are already attached, we'll map them to WSL devices
+    while IFS= read -r line; do
+        local busid vidpid desc state
+        busid=$(echo "$line" | awk '{print $1}')
+        [[ ! "$busid" =~ ^[0-9]+-[0-9]+$ ]] && continue
+        
+        vidpid=$(echo "$line" | awk '{print $2}')
+        state=$(echo "$line" | awk '{print $NF}')
+        desc=$(echo "$line" | awk '{for(j=3;j<NF;j++) printf "%s ", $j}' | cut -c1-45)
+
+        if [[ "$state" == "Attached" ]]; then
+            # If attached, find the corresponding device in WSL
+            # We use the VID:PID to pin the search
+            local wsl_dev
+            wsl_dev=$(detect_usb_device "$vidpid" || true)
+            
+            if [ -n "$wsl_dev" ]; then
+                options+=("wsl|$wsl_dev|$vidpid")
+                echo -e "  ${BOLD}[$i]${NC} $wsl_dev (Já no WSL) - $desc" >&2
+            else
+                # Fallback to win type if WSL detection is tricky, but it's attached
+                options+=("win|$busid|$vidpid")
+                echo -e "  ${BOLD}[$i]${NC} $busid (Anexado) - $desc" >&2
+            fi
+        else
+            options+=("win|$busid|$vidpid")
+            echo -e "  ${BOLD}[$i]${NC} $busid (Windows) - $desc" >&2
+        fi
+        ((i++)) || true
+        
+    done < <(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' list" 2>/dev/null | grep -i "Mass Storage\|Armazenamento\|UAS\|SCSI" || true)
+    
+    if [ ${#options[@]} -eq 0 ]; then
+        echo -e "${RED}[ERROR]${NC} Nenhum dispositivo USB encontrado no Windows" >&2
+        return 1
+    fi
+
+    # Add "All" option if more than one device
+    if [ ${#options[@]} -gt 1 ]; then
+        echo -e "  ${BOLD}[a]${NC} Montar TODOS" >&2
+    fi
+    
+    if [ ${#options[@]} -eq 1 ] && ! $SELECT_MODE; then
+        # Auto-select if only one option and not in explicit select mode
+        echo "${options[0]}"
+        return 0
+    fi
+
+    echo >&2
+    echo -n "  Digite o número ou 'a' [1-${#options[@]}]: " >&2
+    read -r choice < /dev/tty
+    
+    if [ "$choice" = "a" ] && [ ${#options[@]} -gt 1 ]; then
+        # Return all options joined by newline
+        printf "%s\n" "${options[@]}"
+        return 0
+    fi
+    
+    # Validate choice
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${#options[@]} ]; then
+        echo -e "${RED}[ERROR]${NC} Opção inválida" >&2
+        return 1
+    fi
+    
+    # Return selected option info
+    echo "${options[$((choice-1))]}"
+}
+cmd_up() {
+    print_step "Iniciando montagem do dispositivo..."
+    log_info "usb-driver v0.6.2 - Iniciando montagem"
+    
+    # 1. Health check (basics)
+    health_check_wsl || exit 1
+    health_check_usbipd || exit 1
+    
+    if $SIMULATE_MODE; then
+        log_info "[SIMULATE] Verificando usbipd-win..."
+        log_info "[SIMULATE] Anexando USB ao WSL..."
+        log_info "[SIMULATE] Detectando dispositivo USB..."
+        log_success "[SIMULATE] Pendrive montado em $MOUNT_POINT"
+        return 0
+    fi
+
+    # 2. Selection
+    IFS=$'\n' read -d '' -r -a selections < <(select_usb_device) || true
+    set -e
+    
+    if [ ${#selections[@]} -eq 0 ]; then
+        exit 1
+    fi
+    
+    for selection in "${selections[@]}"; do
+        [ -z "$selection" ] && continue
+        
+        local type id vidpid
+        type=$(echo "$selection" | cut -d'|' -f1)
+        id=$(echo "$selection" | cut -d'|' -f2)
+        vidpid=$(echo "$selection" | cut -d'|' -f3)
+        
+        print_step "Processando: $id ($vidpid)..."
+    
+    local device=""
+    
+    # 3. Handle selection
+    if [ "$type" = "win" ]; then
+        # Selection is in Windows -> Attach it
+        local busid="$id"
+        log_info "Encontrado dispositivo USB (BUSID=$busid, VID:PID=$vidpid)"
+        log_info "Anexando ao WSL..."
+        
+        # Try attach first (works if already bound)
+        local attach_output
+        attach_output=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1 || true)
+        
+        if echo "$attach_output" | grep -qiE "not shared|bind"; then
+            # Device needs to be bound first (requires admin)
+            echo
+            log_warn "Dispositivo precisa ser registrado (bind) no Windows."
+            log_info "Solicitação de acesso UAC no Windows... (pode demorar alguns segundos)"
+            
+            # Use PowerShell to start-process with RunAs (triggers UAC)
+            # We use -Wait to ensure the bind is finished before we try attach again
+            powershell.exe -NoProfile -Command "Start-Process -FilePath \"$USBIPD_EXE\" -ArgumentList \"bind\", \"--busid\", \"$busid\" -Verb RunAs -Wait" 2>/dev/null
+            
+            log_info "Autorização concluída. Prosseguindo..."
+            
+            # Try attach again
+            log_info "Tentando anexar novamente..."
+            powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1
+        fi
+        
+        # Wait for device to appear in WSL (with a retry loop)
+        log_info "Aguardando inicialização do dispositivo (pinning by $vidpid)..."
+        local retry=0
+        while [ $retry -lt 15 ]; do
+            # Use VID:PID for pinning detection
+            device=$(detect_usb_device "$vidpid" || true)
+            if [ -n "$device" ]; then
+                break
+            fi
+            echo -n "."
+            sleep 2
+            ((retry++)) || true
+        done
+        echo ""
+        
+    elif [ "$type" = "wsl" ]; then
+        # Selection is already in WSL
+        device="$id"
+        log_info "Usando dispositivo já anexado ($vidpid): $device"
+    fi
+    
+    # 4. Final Mount check
+    if [ -z "$device" ]; then
+        log_error "Nenhum dispositivo de armazenamento encontrado no WSL para $id."
+        log_hint "Verifique se a partição do dispositivo é de um tipo suportado (EXT4, NTFS, FAT32)."
+        continue
+    fi
+    
+    # 4. Determine mount name
+    local label mount_name
+    label=$(lsblk -no LABEL "$device" 2>/dev/null | head -1 | tr -d ' ')
+    if [ -n "$label" ]; then
+        mount_name="$label"
+    else
+        # Use BUSID if no label
+        mount_name="usb-$id"
+    fi
+    
+    # 5. Perform mount in subdirectory
+    mount_ext4 "$device" "$mount_name" || true
+    done
+}
+cmd_down() {
+    print_step "Desmontando dispositivo(s)..."
+    
+    local base_mount="${MOUNT_POINT:-/mnt/usb-driver}"
+    base_mount="${base_mount%/}"
+    
+    # Find all active mounts under our base directory OR legacy directory
+    # sorted by path length (descending)
+    local active_mounts=()
+    while IFS= read -r mnt; do
+        [ -n "$mnt" ] && active_mounts+=("$mnt")
+    done < <(findmnt -lo TARGET -n | grep -E "^($base_mount|/mnt/bkp-pendrive)" | awk '{ print length($0), $0 }' | sort -rn | cut -d" " -f2- || true)
+    
+    if [ ${#active_mounts[@]} -eq 0 ]; then
+        log_warn "Nenhum dispositivo montado em pastas controladas por usb-driver"
+        return 0
+    fi
+    
+    # If multiple mounts, ask user
+    if [ ${#active_mounts[@]} -gt 1 ]; then
+        echo -e "\n${CYAN}▶${NC} ${BOLD}Múltiplos dispositivos encontrados:${NC}\n" >&2
+        local i=1
+        for mnt in "${active_mounts[@]}"; do
+            local dev=$(findmnt -n -o SOURCE "$mnt")
+            echo -e "  ${BOLD}[$i]${NC} $mnt ($dev)" >&2
+            ((i++))
+        done
+        echo -e "  ${BOLD}[a]${NC} Desmontar TODOS" >&2
+        echo >&2
+        echo -n "  Escolha o que desmontar (ou 'q' para sair): " >&2
+        read -r choice < /dev/tty
+        
+        if [ "$choice" = "a" ]; then
+            for mnt in "${active_mounts[@]}"; do
+                # Continue on error during batch unmount
+                safe_unmount "$mnt" "${EXTRA_FLAGS[@]}" || true
+            done
+            return 0
+        elif [ "$choice" = "q" ]; then
+            return 0
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#active_mounts[@]} ]; then
+            safe_unmount "${active_mounts[$((choice-1))]}" "${EXTRA_FLAGS[@]}"
+            return 0
+        else
+            log_error "Opção inválida"
+            return 1
+        fi
+    else
+        # Only one mount, proceed directly
+        safe_unmount "${active_mounts[0]}" "${EXTRA_FLAGS[@]}"
+    fi
+}
+
+cmd_status() {
+    log_info "usb-driver v$VERSION"
+    
+    local base_mount="${MOUNT_POINT:-/mnt/usb-driver}"
+    base_mount="${base_mount%/}"
+    
+    local found=false
+    # Scan for both loop (HD) and USB mounts (including legacy path)
+    while IFS= read -r mnt; do
+        if [ -n "$mnt" ]; then
+            local dev=$(findmnt -n -o SOURCE "$mnt")
+            local fs=$(findmnt -n -o FSTYPE "$mnt")
+            log_success "Dispositivo: $dev -> $mnt ($fs)"
+            found=true
+        fi
+    done < <(findmnt -lo TARGET -n | grep -E "^($base_mount|/mnt/bkp-pendrive)($|/)" || true)
+    
+    if ! $found; then
+        log_warn "Nenhum dispositivo montado em $base_mount"
+        exit 1
+    fi
+}
+
+cmd_install() {
+    print_step "Instalando usb-driver globalmente..."
+    local target="/usr/local/bin/usb-driver"
+    
+    # Use symlink instead of copy to keep access to libs
+    log_info "Criando link simbólico para $target..."
+    sudo ln -sf "$REAL_SCRIPT" "$target"
+    
+    log_success "Instalado com sucesso em $target"
+    log_info "Agora você pode usar apenas 'usb-driver' de qualquer lugar."
+}
+
+# Attach a specific Windows USB device to WSL by BUSID
+cmd_attach() {
+    local busid="$1"
+    
+    if [ -z "$busid" ]; then
+        log_error "BUSID não especificado"
+        log_hint "Uso: usb-driver attach <BUSID>"
+        log_hint "Execute 'usb-driver list' para ver os BUSIDs disponíveis"
+        return 1
+    fi
+    
+    print_step "Anexando dispositivo $busid ao WSL..."
+    
+    if ! require_usbipd; then
+        return 1
+    fi
+    
+    # Try to attach
+    log_info "Executando: usbipd attach --wsl --busid $busid"
+    
+    local result
+    result=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1)
+    
+    if echo "$result" | grep -qi "error\|denied\|not shared"; then
+        log_error "Falha ao anexar dispositivo"
+        if echo "$result" | grep -qi "not shared"; then
+            log_warn "Dispositivo precisa ser compartilhado primeiro"
+            echo
+            log_info "Execute no PowerShell como ADMIN:"
+            echo -e "    ${BOLD}usbipd bind --busid $busid${NC}"
+            echo
+            log_info "Depois tente novamente: usb-driver attach $busid"
+        fi
+        return 1
+    fi
+    
+    # Wait for device to appear
+    log_info "Aguardando dispositivo aparecer no WSL..."
+    sleep 3
+    
+    log_success "Dispositivo $busid anexado ao WSL"
+    log_hint "Execute 'usb-driver list' para verificar"
+    return 0
+}
+
+# =========================
+# Main
+# =========================
+case "$COMMAND" in
+    up|mount)
+        cmd_up
+        ;;
+    down|unmount)
+        cmd_down
+        ;;
+    status)
+        cmd_status
+        ;;
+    list)
+        # Disable set -e for device enumeration (grep may return 1 for empty results)
+        set +e
+        list_available_devices
+        set -e
+        ;;
+    check)
+        run_health_check
+        ;;
+    install)
+        cmd_install
+        ;;
+    attach)
+        cmd_attach "$BUSID_ARG"
+        ;;
+    help|"")
+        show_help
+        ;;
+    *)
+        log_error "Comando desconhecido: $COMMAND"
+        show_help
+        exit 1
+        ;;
+esac

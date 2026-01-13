@@ -1,5 +1,5 @@
 #!/bin/bash
-# lib/usbipd.sh - usbipd-win integration for bkp-pendrive
+# lib/usbipd.sh - usbipd-win integration for usb-driver
 
 # Path to usbipd.exe on Windows (standard installation)
 USBIPD_EXE='C:\Program Files\usbipd-win\usbipd.exe'

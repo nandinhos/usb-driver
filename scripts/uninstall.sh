@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-PROJECT_NAME="bkp-pendrive"
+PROJECT_NAME="usb-driver"
 SYMLINK="/usr/local/bin/$PROJECT_NAME"
 
 echo "▶ Removendo $PROJECT_NAME..."
@@ -18,6 +18,6 @@ fi
 echo
 echo "⚠ Diretórios do projeto NÃO foram apagados automaticamente."
 echo "Se desejar, remova manualmente:"
-echo "  rm -rf ~/projects/bkp-pendrive"
+echo "  rm -rf ~/projects/usb-driver"
 
 echo "✅ Desinstalação concluída"

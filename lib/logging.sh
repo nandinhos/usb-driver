@@ -1,5 +1,5 @@
 #!/bin/bash
-# lib/logging.sh - Logging functions for bkp-pendrive
+# lib/logging.sh - Logging functions for usb-driver
 
 # Colors (compatible with most terminals)
 if [ -t 1 ]; then
