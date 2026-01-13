@@ -428,7 +428,7 @@ cmd_status() {
     done < <(findmnt -lo TARGET -n | grep -E "^($base_mount|/mnt/bkp-pendrive)($|/)" || true)
     
     if ! $found; then
-        log_warn "Nenhum dispositivo montado em $base_mount"
+        log_warn "Nenhum dispositivo montado em ${YELLOW}$base_mount${NC}"
         exit 1
     fi
 }

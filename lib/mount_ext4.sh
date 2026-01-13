@@ -427,7 +427,7 @@ safe_unmount() {
     done
     
     if ! mountpoint -q "$target_path" 2>/dev/null; then
-        log_warn "Nenhum dispositivo montado em $target_path"
+        log_warn "Nenhum dispositivo montado em ${YELLOW}$target_path${NC}"
         return 1
     fi
     
