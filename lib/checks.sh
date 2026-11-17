@@ -157,5 +157,5 @@ run_health_check_json() {
     printf '{"ok":%s,"wsl":%s,"usbipd":{"installed":%s,"version":"%s"},"ntfs3g":%s,"mountPoint":"%s"}\n' \
         "$ok" "$wsl_ok" "$usbipd_ok" "$(json_escape "$usbipd_ver")" "$ntfs3g_ok" "$(json_escape "$mount_point")"
 
-    $ok && return 0 || return 1
+    return 0
 }

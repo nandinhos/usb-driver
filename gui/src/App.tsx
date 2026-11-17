@@ -45,12 +45,32 @@ export default function App() {
     }
     setLoading(true);
     try {
-      const [h, d] = await Promise.all([
-        window.usbDriver.checkHealth().catch(() => null),
-        window.usbDriver.listDevices().catch(() => ({ wslDevices: [], windowsDevices: [] })),
+      const [hRes, dRes] = await Promise.allSettled([
+        window.usbDriver.checkHealth(),
+        window.usbDriver.listDevices(),
       ]);
-      if (h) setHealth(h);
-      setDevices(d);
+
+      if (hRes.status === 'fulfilled') {
+        setHealth(hRes.value);
+      } else {
+        setHealth({
+          ok: false,
+          wsl: false,
+          usbipd: { installed: false, version: '' },
+          ntfs3g: false,
+          mountPoint: '/mnt/usb-driver',
+        });
+        setToast({
+          ok: false,
+          text: `Falha na comunicação com o WSL2: ${hRes.reason instanceof Error ? hRes.reason.message : String(hRes.reason)}`,
+        });
+      }
+
+      if (dRes.status === 'fulfilled') {
+        setDevices(dRes.value);
+      } else {
+        setDevices({ wslDevices: [], windowsDevices: [] });
+      }
     } finally {
       setLoading(false);
     }

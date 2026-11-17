@@ -45,25 +45,38 @@ export class UsbDriverBridge {
   private async runCliJson<T>(args: string[]): Promise<T> {
     const cliArgs = [...(this.simulate ? ['--simulate'] : []), '--json', ...args];
 
-    if (process.platform === 'win32') {
-      const wslArgs: string[] = [];
-      if (this.wslDistro) {
-        wslArgs.push('-d', this.wslDistro);
-      }
-      wslArgs.push('--', 'usb-driver', ...cliArgs);
+    try {
+      if (process.platform === 'win32') {
+        const wslArgs: string[] = [];
+        if (this.wslDistro) {
+          wslArgs.push('-d', this.wslDistro);
+        }
+        wslArgs.push('--', 'usb-driver', ...cliArgs);
 
-      const { stdout } = await execFileAsync('wsl.exe', wslArgs, {
+        const { stdout } = await execFileAsync('wsl.exe', wslArgs, {
+          timeout: EXEC_TIMEOUT_MS,
+          windowsHide: true,
+        });
+        return parseJsonOutput<T>(stdout);
+      }
+
+      // Execução local em ambiente Linux/WSL (útil para dev & --simulate)
+      const { stdout } = await execFileAsync(this.getLocalCliPath(), cliArgs, {
         timeout: EXEC_TIMEOUT_MS,
-        windowsHide: true,
       });
       return parseJsonOutput<T>(stdout);
+    } catch (err: unknown) {
+      const execErr = err as { stdout?: string; stderr?: string; message?: string };
+      if (execErr.stdout) {
+        try {
+          return parseJsonOutput<T>(execErr.stdout);
+        } catch {
+          // Segue para erro legível abaixo
+        }
+      }
+      const detail = (execErr.stderr || execErr.message || 'Erro desconhecido').trim();
+      throw new Error(detail);
     }
-
-    // Execução local em ambiente Linux/WSL (útil para dev & --simulate)
-    const { stdout } = await execFileAsync(this.getLocalCliPath(), cliArgs, {
-      timeout: EXEC_TIMEOUT_MS,
-    });
-    return parseJsonOutput<T>(stdout);
   }
 
   public async checkHealth() {
