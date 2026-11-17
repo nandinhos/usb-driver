@@ -178,7 +178,7 @@ export class UsbDriverBridge {
           windowsHide: true,
         }).catch(() => undefined);
         // Aguarda kernel do WSL2 registrar o novo bloco /dev/sdX antes de montar
-        await new Promise((r) => setTimeout(r, 800));
+        await new Promise((r) => setTimeout(r, 1500));
       }
       return this.runCliJson(['up', '--all']);
     }

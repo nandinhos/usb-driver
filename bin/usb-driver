@@ -390,11 +390,15 @@ cmd_up() {
     
     # 5. Perform mount in subdirectory
     if $JSON_MODE; then
-        if mount_ext4 "$device" "$mount_name" >/dev/null 2>&1; then
+        local mount_out
+        if mount_out=$(mount_ext4 "$device" "$mount_name" 2>&1); then
             printf '{"ok":true,"device":"%s","mountPoint":"%s/%s"}\n' \
                 "$(json_escape "$device")" "$(json_escape "${MOUNT_POINT%/}")" "$(json_escape "$mount_name")"
         else
-            printf '{"ok":false,"device":"%s","message":"Falha ao montar dispositivo"}\n' "$(json_escape "$device")"
+            local clean_err
+            clean_err=$(printf '%s' "$mount_out" | tail -n 1 | sed 's/\x1b\[[0-9;]*m//g')
+            printf '{"ok":false,"device":"%s","message":"%s"}\n' \
+                "$(json_escape "$device")" "$(json_escape "${clean_err:-Falha ao montar dispositivo}")"
             return 1
         fi
     else

@@ -134,6 +134,7 @@ export function WslDeviceCard({
 interface WindowsDeviceCardProps {
   device: WindowsDevice;
   busy: boolean;
+  isMountedInWsl: boolean;
   t: TranslationDict;
   onBind: (busid: string) => void;
   onMount: (busid: string) => void;
@@ -143,6 +144,7 @@ interface WindowsDeviceCardProps {
 export function WindowsDeviceCard({
   device,
   busy,
+  isMountedInWsl,
   t,
   onBind,
   onMount,
@@ -202,15 +204,17 @@ export function WindowsDeviceCard({
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onMount(device.busid)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/20 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/30 disabled:opacity-50"
-              >
-                <Play className="h-3.5 w-3.5" />
-                {t.mountWsl}
-              </button>
+              {!(isAttached && isMountedInWsl) && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onMount(device.busid)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/20 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/30 disabled:opacity-50"
+                >
+                  <Play className="h-3.5 w-3.5" />
+                  {t.mountWsl}
+                </button>
+              )}
               {isAttached && (
                 <button
                   type="button"

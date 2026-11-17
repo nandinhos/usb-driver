@@ -100,6 +100,16 @@ export default function App() {
     }
   }, [hasBridge]);
 
+  const silentRefresh = useCallback(async () => {
+    if (!hasBridge) return;
+    try {
+      const d = await window.usbDriver.listDevices();
+      setDevices(d);
+    } catch {
+      // Ignora falhas transitórias durante polling silencioso
+    }
+  }, [hasBridge]);
+
   useEffect(() => {
     if (!hasBridge) {
       setLoading(false);
@@ -115,6 +125,17 @@ export default function App() {
         refreshAll();
       });
   }, [hasBridge, refreshAll]);
+
+  // Atualização automática em tempo real a cada 3s quando a janela estiver visível
+  useEffect(() => {
+    if (!hasBridge) return;
+    const id = window.setInterval(() => {
+      if (!busy && !loading && document.visibilityState === 'visible') {
+        silentRefresh();
+      }
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [hasBridge, busy, loading, silentRefresh]);
 
   const handleToggleSimulate = async () => {
     if (!hasBridge || busy) return;
@@ -372,6 +393,7 @@ export default function App() {
                     key={dev.busid}
                     device={dev}
                     busy={busy}
+                    isMountedInWsl={mountedCount > 0}
                     t={t}
                     onBind={handleBind}
                     onMount={handleMount}
