@@ -50,7 +50,7 @@ ${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_BLKID} -o value -s TYPE /dev/sd*
 ${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_MKDIR} -p /mnt/usb-driver/*
 ${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_RMDIR} /mnt/usb-driver/*
 ${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_MOUNT} /dev/sd* /mnt/usb-driver/*, ${BIN_MOUNT} /dev/sd* /mnt/usb-driver/* -o *
-${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_UMOUNT} /mnt/usb-driver/*, ${BIN_UMOUNT} -f /mnt/usb-driver/*"
+${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_UMOUNT} /mnt/usb-driver/*, ${BIN_UMOUNT} -f /mnt/usb-driver/*, ${BIN_UMOUNT} -l /mnt/usb-driver/*"
 
 if [ -n "$BIN_NTFS3G" ]; then
     RULE_CONTENT="${RULE_CONTENT}

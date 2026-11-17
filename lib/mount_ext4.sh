@@ -490,11 +490,13 @@ safe_unmount() {
     # Step 3: Change out of mountpoint
     cd "$HOME" 2>/dev/null || true
     
-    # Step 4: Unmount
+    # Step 4: Unmount (with lazy fallback on --force for busy/stale FUSE handles)
     if $force; then
-        _sudo umount -f "$target_path"
+        _sudo umount -f "$target_path" 2>/dev/null || _sudo umount -l "$target_path"
     else
-        _sudo umount "$target_path"
+        if ! _sudo umount "$target_path" 2>/dev/null; then
+            _sudo umount -l "$target_path"
+        fi
     fi
     
     # shellcheck disable=SC2181 # Conditional mount prevents direct check

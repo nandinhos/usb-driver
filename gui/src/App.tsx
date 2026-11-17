@@ -168,7 +168,7 @@ export default function App() {
     if (!hasBridge || busy) return;
     setBusy(true);
     try {
-      const res = await window.usbDriver.unmountDevice(mountPoint, { eject });
+      const res = await window.usbDriver.unmountDevice(mountPoint, { eject, force: true });
       notify(res, t.unmountSuccess);
       await syncAfterAction();
     } finally {

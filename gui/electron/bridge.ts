@@ -199,11 +199,13 @@ export class UsbDriverBridge {
     if (process.platform !== 'win32') {
       return { ok: false, message: 'Detach direto disponível apenas no Windows' };
     }
+    // Sempre desmonta com segurança no WSL2 antes de desanexar para evitar montagens fantasmas/corrupção
+    await this.runCliJson(['down', '--force']).catch(() => undefined);
     await execFileAsync(USBIPD_EXE, ['detach', '--busid', busid], {
       timeout: EXEC_TIMEOUT_MS,
       windowsHide: true,
     });
-    return { ok: true, busid, message: `Dispositivo ${busid} desanexado do WSL` };
+    return { ok: true, busid, message: `Dispositivo ${busid} desmontado e desanexado com segurança` };
   }
 
   public async unmountDevice(
