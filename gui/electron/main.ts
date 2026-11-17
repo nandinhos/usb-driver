@@ -13,10 +13,11 @@ const bridge = new UsbDriverBridge({
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 1080,
-    height: 720,
-    minWidth: 860,
-    minHeight: 600,
+    width: 1180,
+    height: 760,
+    minWidth: 720,
+    minHeight: 560,
+    autoHideMenuBar: true,
     backgroundColor: '#020617',
     title: 'USB Driver — WSL2 Storage Manager',
     show: false,
@@ -28,6 +29,8 @@ function createWindow(): BrowserWindow {
       webSecurity: true,
     },
   });
+
+  win.setMenuBarVisibility(false);
 
   // Bloqueia navegação externa e abertura de novas janelas
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -113,6 +116,7 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   registerIpcHandlers();
   mainWindow = createWindow();
   createTray();

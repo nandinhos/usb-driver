@@ -14,6 +14,30 @@ const execFileAsync = promisify(execFile);
 const USBIPD_EXE = 'C:\\Program Files\\usbipd-win\\usbipd.exe';
 const EXEC_TIMEOUT_MS = 30_000;
 
+interface UsbipdStateDevice {
+  BusId: string | null;
+  ClientIPAddress: string | null;
+  Description: string | null;
+  InstanceId: string | null;
+  IsForced: boolean;
+  PersistedGuid: string | null;
+  StubInstanceId: string | null;
+}
+
+interface UsbipdStateOutput {
+  Devices?: UsbipdStateDevice[];
+}
+
+function cleanUsbipdVersion(raw: string): string {
+  return raw ? raw.split('+')[0].trim() : '';
+}
+
+function extractVidPid(instanceId: string | null): string {
+  if (!instanceId) return '0000:0000';
+  const match = instanceId.match(/VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})/);
+  return match ? `${match[1].toLowerCase()}:${match[2].toLowerCase()}` : '0000:0000';
+}
+
 export interface BridgeConfig {
   simulate: boolean;
   wslDistro?: string;
@@ -80,11 +104,63 @@ export class UsbDriverBridge {
   }
 
   public async checkHealth() {
-    return this.runCliJson(['check']);
+    const res = await this.runCliJson<{
+      ok: boolean;
+      wsl: boolean;
+      usbipd: { installed: boolean; version: string };
+      ntfs3g: boolean;
+      mountPoint: string;
+    }>(['check']);
+
+    if (res?.usbipd?.version) {
+      res.usbipd.version = cleanUsbipdVersion(res.usbipd.version);
+    }
+    return res;
   }
 
   public async listDevices() {
-    return this.runCliJson(['list']);
+    const base = await this.runCliJson<{
+      wslDevices: Array<Record<string, unknown>>;
+      windowsDevices: Array<{
+        busid: string;
+        vidpid: string;
+        description: string;
+        state: string;
+      }>;
+    }>(['list']);
+
+    if (process.platform === 'win32' && !this.simulate) {
+      try {
+        const { stdout } = await execFileAsync(USBIPD_EXE, ['state'], {
+          timeout: EXEC_TIMEOUT_MS,
+          windowsHide: true,
+        });
+        const stateData = JSON.parse(stdout) as UsbipdStateOutput;
+        const connected = (stateData.Devices || []).filter(
+          (d): d is UsbipdStateDevice & { BusId: string } =>
+            Boolean(d.BusId && isValidBusid(d.BusId))
+        );
+
+        // Prioriza dispositivos de armazenamento; se nenhum casar pelo nome, exibe todos conectados (exceto hubs)
+        const storageRegex = /mass storage|armazenamento|uas|scsi|disk|flash|drive|sandisk|kingston|seagate|wd|samsung|crucial|toshiba|ssd|hdd/i;
+        const nonHub = connected.filter((d) => !/root hub|generic usb hub/i.test(d.Description || ''));
+        const storageOnly = nonHub.filter((d) => storageRegex.test(d.Description || ''));
+        const chosen = storageOnly.length > 0 ? storageOnly : nonHub;
+
+        if (chosen.length > 0) {
+          base.windowsDevices = chosen.map((d) => ({
+            busid: d.BusId,
+            vidpid: extractVidPid(d.InstanceId),
+            description: d.Description || 'Dispositivo USB',
+            state: d.ClientIPAddress ? 'Attached' : d.PersistedGuid ? 'Shared' : 'NotShared',
+          }));
+        }
+      } catch {
+        // Mantém resultado vindo do CLI WSL se `usbipd state` falhar
+      }
+    }
+
+    return base;
   }
 
   public async getStatus() {
@@ -111,6 +187,12 @@ export class UsbDriverBridge {
     targetPath: string,
     options: { force?: boolean; eject?: boolean } = {}
   ) {
+    if (targetPath === '__ALL__') {
+      const args = ['down'];
+      if (options.force) args.push('--force');
+      if (options.eject) args.push('--eject');
+      return this.runCliJson(args);
+    }
     if (!isValidMountPath(targetPath)) {
       return { ok: false, message: `Caminho de montagem inválido: ${targetPath}` };
     }

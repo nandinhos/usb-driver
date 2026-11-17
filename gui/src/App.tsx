@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   CheckCircle2,
   FlaskConical,
+  Globe,
   HardDrive,
+  Play,
+  Power,
   RefreshCw,
   Usb,
   XCircle,
@@ -10,6 +13,7 @@ import {
 import { DeviceCardPlaceholder } from './components/EmptyState';
 import { WindowsDeviceCard, WslDeviceCard } from './components/DeviceCard';
 import { HealthBanner } from './components/HealthBanner';
+import { TRANSLATIONS, type Locale } from './i18n/translations';
 import type { ActionResult, DeviceListResult, HealthCheckResult } from './types/usb';
 
 interface ToastState {
@@ -18,6 +22,10 @@ interface ToastState {
 }
 
 export default function App() {
+  const [locale, setLocale] = useState<Locale>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('usb-driver-locale') : null;
+    return saved === 'en-US' ? 'en-US' : 'pt-BR';
+  });
   const [version, setVersion] = useState('0.9.0');
   const [simulate, setSimulate] = useState(false);
   const [health, setHealth] = useState<HealthCheckResult | null>(null);
@@ -29,14 +37,23 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
+  const t = TRANSLATIONS[locale];
   const hasBridge = typeof window !== 'undefined' && Boolean(window.usbDriver);
 
-  const notify = useCallback((res: ActionResult, fallbackSuccess: string) => {
-    setToast({
-      ok: res.ok,
-      text: res.message || (res.ok ? fallbackSuccess : 'Operação não concluída.'),
-    });
-  }, []);
+  const handleSetLocale = (next: Locale) => {
+    setLocale(next);
+    localStorage.setItem('usb-driver-locale', next);
+  };
+
+  const notify = useCallback(
+    (res: ActionResult, fallbackSuccess: string) => {
+      setToast({
+        ok: res.ok,
+        text: res.message || (res.ok ? fallbackSuccess : t.actionError),
+      });
+    },
+    [t.actionError]
+  );
 
   const refreshAll = useCallback(async () => {
     if (!hasBridge) {
@@ -62,7 +79,7 @@ export default function App() {
         });
         setToast({
           ok: false,
-          text: `Falha na comunicação com o WSL2: ${hRes.reason instanceof Error ? hRes.reason.message : String(hRes.reason)}`,
+          text: `${hRes.reason instanceof Error ? hRes.reason.message : String(hRes.reason)}`,
         });
       }
 
@@ -96,12 +113,7 @@ export default function App() {
     if (!hasBridge || busy) return;
     const next = await window.usbDriver.setSimulateMode(!simulate);
     setSimulate(next);
-    setToast({
-      ok: true,
-      text: next
-        ? 'Modo Simulação ativado — exibindo dispositivos fictícios.'
-        : 'Modo Simulação desativado — lendo hardware real.',
-    });
+    setToast({ ok: true, text: next ? t.simOnMsg : t.simOffMsg });
     await refreshAll();
   };
 
@@ -110,7 +122,7 @@ export default function App() {
     setBusy(true);
     try {
       const res = await window.usbDriver.mountDevice(busid);
-      notify(res, 'Dispositivo montado no WSL2 com sucesso.');
+      notify(res, t.mountSuccess);
       await refreshAll();
     } finally {
       setBusy(false);
@@ -122,7 +134,7 @@ export default function App() {
     setBusy(true);
     try {
       const res = await window.usbDriver.unmountDevice(mountPoint, { eject });
-      notify(res, 'Dispositivo desmontado e ejetado com segurança.');
+      notify(res, t.unmountSuccess);
       await refreshAll();
     } finally {
       setBusy(false);
@@ -134,7 +146,7 @@ export default function App() {
     setBusy(true);
     try {
       const res = await window.usbDriver.bindDevice(busid);
-      notify(res, `Dispositivo ${busid} compartilhado.`);
+      notify(res, t.bindSuccess);
       await refreshAll();
     } finally {
       setBusy(false);
@@ -150,61 +162,102 @@ export default function App() {
   const mountedCount = devices.wslDevices.filter((d) => d.status === 'mounted').length;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950 text-slate-100">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-7">
+    <div className="flex h-screen flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950 text-slate-100">
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col gap-3.5 px-5 py-4">
         {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 shadow-lg shadow-cyan-500/10">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 shadow-lg shadow-cyan-500/10">
               <Usb className="h-5 w-5 text-cyan-300" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold tracking-tight text-white">USB Driver</h1>
-                <span className="rounded-full border border-slate-800 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
+                <h1 className="text-base font-bold tracking-tight text-white">USB Driver</h1>
+                <span className="rounded-full border border-slate-800 bg-slate-900 px-2 py-0.5 text-[10px] font-medium text-slate-400">
                   v{version}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
-                Gerenciador seguro de armazenamento USB (EXT4, NTFS, exFAT, FAT32) no WSL2
-              </p>
+              <p className="text-xs text-slate-400">{t.subtitle}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Idioma PT-BR / EN-US */}
+            <div className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-900/90 p-0.5 text-[11px] font-semibold">
+              <Globe className="mx-1.5 h-3.5 w-3.5 text-slate-400" />
+              <button
+                type="button"
+                onClick={() => handleSetLocale('pt-BR')}
+                className={`rounded-md px-2 py-1 transition ${
+                  locale === 'pt-BR' ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                PT-BR
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetLocale('en-US')}
+                className={`rounded-md px-2 py-1 transition ${
+                  locale === 'en-US' ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                EN-US
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => handleMount()}
+              disabled={!hasBridge || busy}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/20 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/30 disabled:opacity-50"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {t.mountAll}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleUnmount('__ALL__', true)}
+              disabled={!hasBridge || busy || mountedCount === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-40"
+            >
+              <Power className="h-3.5 w-3.5" />
+              {t.ejectAll}
+            </button>
+
             <button
               type="button"
               onClick={handleToggleSimulate}
               disabled={!hasBridge || busy}
-              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition disabled:opacity-50 ${
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition disabled:opacity-50 ${
                 simulate
                   ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-200'
                   : 'border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700'
               }`}
             >
               <FlaskConical className="h-3.5 w-3.5" />
-              {simulate ? 'Simulação: ON' : 'Simular'}
+              {simulate ? t.simulateOn : t.simulateOff}
             </button>
 
             <button
               type="button"
               onClick={refreshAll}
               disabled={!hasBridge || loading || busy}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-xs font-semibold text-slate-100 transition hover:border-cyan-500/40 hover:bg-slate-800 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-cyan-500/40 hover:bg-slate-800 disabled:opacity-50"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-              Atualizar
+              {t.refresh}
             </button>
           </div>
         </header>
 
         {/* Health Banner */}
-        <HealthBanner health={health} simulate={simulate} />
+        <HealthBanner health={health} simulate={simulate} t={t} />
 
         {/* Toast Feedback */}
         {toast && (
           <div
-            className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-xs font-medium ${
+            className={`flex shrink-0 items-center justify-between gap-3 rounded-xl border px-3.5 py-2 text-xs font-medium ${
               toast.ok
                 ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
                 : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
@@ -223,88 +276,83 @@ export default function App() {
               onClick={() => setToast(null)}
               className="text-slate-400 hover:text-slate-200"
             >
-              Fechar
+              {t.close}
             </button>
           </div>
         )}
 
-        {/* KPI Cards */}
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-900/50 p-4">
-            <p className="text-xs font-medium text-slate-400">Montados no WSL2</p>
-            <p className="mt-1 text-2xl font-bold text-emerald-300">{mountedCount}</p>
+        {/* KPI Strip */}
+        <section className="grid shrink-0 grid-cols-3 gap-3">
+          <div className="flex items-center justify-between rounded-xl border border-slate-800/80 bg-slate-900/50 px-4 py-2.5">
+            <span className="text-xs font-medium text-slate-400">{t.kpiMounted}</span>
+            <span className="text-xl font-bold text-emerald-300">{mountedCount}</span>
           </div>
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-900/50 p-4">
-            <p className="text-xs font-medium text-slate-400">Detectados no Windows</p>
-            <p className="mt-1 text-2xl font-bold text-indigo-300">
+          <div className="flex items-center justify-between rounded-xl border border-slate-800/80 bg-slate-900/50 px-4 py-2.5">
+            <span className="text-xs font-medium text-slate-400">{t.kpiWindows}</span>
+            <span className="text-xl font-bold text-indigo-300">
               {devices.windowsDevices.length}
-            </p>
+            </span>
           </div>
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-900/50 p-4">
-            <p className="text-xs font-medium text-slate-400">Total no WSL2</p>
-            <p className="mt-1 text-2xl font-bold text-cyan-300">
+          <div className="flex items-center justify-between rounded-xl border border-slate-800/80 bg-slate-900/50 px-4 py-2.5">
+            <span className="text-xs font-medium text-slate-400">{t.kpiTotalWsl}</span>
+            <span className="text-xl font-bold text-cyan-300">
               {devices.wslDevices.length}
-            </p>
+            </span>
           </div>
         </section>
 
-        {/* WSL2 Devices */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
+        {/* Main 2-Column Responsive Grid (no page overflow) */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* WSL2 Column */}
+          <section className="flex min-h-0 flex-col rounded-2xl border border-slate-800/70 bg-slate-900/30 p-3.5">
+            <h2 className="mb-2.5 inline-flex shrink-0 items-center gap-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
               <HardDrive className="h-4 w-4 text-emerald-400" />
-              Dispositivos no WSL2
+              {t.sectionWsl}
             </h2>
-          </div>
 
-          {devices.wslDevices.length === 0 ? (
-            <DeviceCardPlaceholder
-              title="Nenhum dispositivo montado no WSL2"
-              description="Conecte um pendrive ou HD externo e clique em Montar no WSL na seção abaixo, ou ative o modo Simular para testar a interface."
-            />
-          ) : (
-            <div className="grid gap-3">
-              {devices.wslDevices.map((dev) => (
-                <WslDeviceCard
-                  key={dev.device}
-                  device={dev}
-                  busy={busy}
-                  onUnmount={handleUnmount}
-                  onOpenExplorer={handleOpenExplorer}
-                />
-              ))}
+            <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
+              {devices.wslDevices.length === 0 ? (
+                <DeviceCardPlaceholder title={t.emptyWslTitle} description={t.emptyWslDesc} />
+              ) : (
+                devices.wslDevices.map((dev) => (
+                  <WslDeviceCard
+                    key={dev.device}
+                    device={dev}
+                    busy={busy}
+                    t={t}
+                    onUnmount={handleUnmount}
+                    onOpenExplorer={handleOpenExplorer}
+                  />
+                ))
+              )}
             </div>
-          )}
-        </section>
+          </section>
 
-        {/* Windows Devices */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
+          {/* Windows Column */}
+          <section className="flex min-h-0 flex-col rounded-2xl border border-slate-800/70 bg-slate-900/30 p-3.5">
+            <h2 className="mb-2.5 inline-flex shrink-0 items-center gap-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
               <Usb className="h-4 w-4 text-indigo-400" />
-              Dispositivos USB no Windows (usbipd-win)
+              {t.sectionWindows}
             </h2>
-          </div>
 
-          {devices.windowsDevices.length === 0 ? (
-            <DeviceCardPlaceholder
-              title="Nenhum armazenamento USB adicional no Windows"
-              description="Pendrives e HDs externos conectados ao Windows aparecerão aqui automaticamente após clicar em Atualizar."
-            />
-          ) : (
-            <div className="grid gap-3">
-              {devices.windowsDevices.map((dev) => (
-                <WindowsDeviceCard
-                  key={dev.busid}
-                  device={dev}
-                  busy={busy}
-                  onBind={handleBind}
-                  onMount={handleMount}
-                />
-              ))}
+            <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
+              {devices.windowsDevices.length === 0 ? (
+                <DeviceCardPlaceholder title={t.emptyWinTitle} description={t.emptyWinDesc} />
+              ) : (
+                devices.windowsDevices.map((dev) => (
+                  <WindowsDeviceCard
+                    key={dev.busid}
+                    device={dev}
+                    busy={busy}
+                    t={t}
+                    onBind={handleBind}
+                    onMount={handleMount}
+                  />
+                ))
+              )}
             </div>
-          )}
-        </section>
+          </section>
+        </div>
       </div>
     </div>
   );
