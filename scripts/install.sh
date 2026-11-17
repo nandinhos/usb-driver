@@ -87,7 +87,7 @@ for arg in "$@"; do
 done
 
 # =========================
-# Helper: run command
+# Helper: run command (no eval)
 # =========================
 run() {
     if $CHECK_ONLY; then
@@ -97,8 +97,7 @@ run() {
         echo -e "${YELLOW}[DRY-RUN]${NC} $*"
         return 0
     fi
-    # shellcheck disable=SC2294 # Intentional eval for command execution
-    eval "$@"
+    "$@"
 }
 
 # =========================
@@ -200,9 +199,14 @@ main() {
         # Mount point
         read -rp "$(echo -e "${BLUE}?${NC} Mount point [${DEFAULT_MOUNT_POINT}]: ")" MOUNT_POINT
         MOUNT_POINT="${MOUNT_POINT:-$DEFAULT_MOUNT_POINT}"
+        if [[ ! "$MOUNT_POINT" =~ ^/[[:alnum:]._/-]+$ || "$MOUNT_POINT" == *".."* ]]; then
+            print_warn "Mount point inválido. Usando padrão: $DEFAULT_MOUNT_POINT"
+            MOUNT_POINT="$DEFAULT_MOUNT_POINT"
+        fi
         
         # Label (optional)
         read -rp "$(echo -e "${BLUE}?${NC} Label do pendrive (opcional) []: ")" PENDRIVE_LABEL
+        PENDRIVE_LABEL=$(printf '%s' "$PENDRIVE_LABEL" | tr -cd '[:alnum:]._ -')
         
         echo
         print_info "Configuração:"
@@ -217,20 +221,17 @@ main() {
     print_step "Instalando..."
     
     # Permissions
-    run "chmod +x '$BIN_PATH'"
-    run "chmod +x '$LIB_DIR'/*.sh"
+    run chmod +x "$BIN_PATH"
+    run chmod +x "$LIB_DIR"/*.sh
     print_success "Permissões ajustadas"
     
     # Config dir
-    run "mkdir -p '$CONFIG_DIR'"
+    run mkdir -p "$CONFIG_DIR"
     
     # Write config
     if ! $CHECK_ONLY && ! $DRY_RUN; then
-        cat > "$CONFIG_FILE" << EOF
-# usb-driver configuration
-MOUNT_POINT="$MOUNT_POINT"
-PENDRIVE_LABEL="$PENDRIVE_LABEL"
-EOF
+        printf '# usb-driver configuration\nMOUNT_POINT="%s"\nPENDRIVE_LABEL="%s"\n' \
+            "$MOUNT_POINT" "$PENDRIVE_LABEL" > "$CONFIG_FILE"
         print_success "Configuração salva em $CONFIG_FILE"
     elif $DRY_RUN; then
         echo -e "${YELLOW}[DRY-RUN]${NC} Criar config em $CONFIG_FILE"
@@ -245,7 +246,7 @@ EOF
         if $CHECK_ONLY; then
             print_info "[CHECK] Symlink seria criado: $SYMLINK"
         else
-            run "sudo ln -s '$BIN_PATH' '$SYMLINK'"
+            run sudo ln -s "$BIN_PATH" "$SYMLINK"
             print_success "Symlink criado: $SYMLINK"
         fi
     fi

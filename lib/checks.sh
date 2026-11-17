@@ -41,7 +41,7 @@ health_check_wsl() {
 # Check usbipd-win installation and version
 health_check_usbipd() {
     local version
-    version=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' --version" 2>/dev/null | tr -d '\r\n')
+    version=$(get_usbipd_version)
     
     if [ -n "$version" ]; then
         log_success "usbipd-win instalado ($version)"
@@ -95,8 +95,7 @@ health_check_usb_device() {
     else
         # Check if there are USB storage devices in Windows that can be attached
         local win_devices
-        win_devices=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' list" 2>/dev/null | \
-            grep -ci "Mass Storage\|Armazenamento\|UAS\|SCSI" || echo 0)
+        win_devices=$(list_usb_devices | grep -ci "$USB_STORAGE_FILTER" || echo 0)
         
         if [ "$win_devices" -gt 0 ]; then
             log_warn "Dispositivo USB no Windows, mas não anexado ao WSL"
@@ -130,4 +129,33 @@ run_health_check() {
         echo -e "${YELLOW}⚠ Ambiente com $errors problema(s). Verifique as mensagens acima.${NC}"
         return 1
     fi
+}
+
+# JSON output for health checks
+run_health_check_json() {
+    local wsl_ok=false usbipd_ok=false ntfs3g_ok=false
+    local usbipd_ver=""
+    local mount_point="${MOUNT_POINT:-$DEFAULT_MOUNT_POINT}"
+
+    if check_wsl; then wsl_ok=true; fi
+
+    if ${SIMULATE_MODE:-false}; then
+        usbipd_ok=true
+        usbipd_ver="4.3.0-sim"
+        ntfs3g_ok=true
+    else
+        usbipd_ver=$(get_usbipd_version)
+        [ -n "$usbipd_ver" ] && usbipd_ok=true
+        check_command ntfs-3g && ntfs3g_ok=true
+    fi
+
+    local ok=false
+    if $wsl_ok && $usbipd_ok; then
+        ok=true
+    fi
+
+    printf '{"ok":%s,"wsl":%s,"usbipd":{"installed":%s,"version":"%s"},"ntfs3g":%s,"mountPoint":"%s"}\n' \
+        "$ok" "$wsl_ok" "$usbipd_ok" "$(json_escape "$usbipd_ver")" "$ntfs3g_ok" "$(json_escape "$mount_point")"
+
+    $ok && return 0 || return 1
 }

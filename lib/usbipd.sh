@@ -11,6 +11,11 @@ check_usbipd_installed() {
     return 1
 }
 
+# Get usbipd-win version string
+get_usbipd_version() {
+    powershell.exe -NoProfile -Command "& '$USBIPD_EXE' --version" 2>/dev/null | tr -d '\r\n'
+}
+
 # Prompt user to install usbipd-win with guidance
 prompt_usbipd_install() {
     echo ""
@@ -52,9 +57,33 @@ list_usb_devices() {
     powershell.exe -NoProfile -Command "& '$USBIPD_EXE' list" 2>/dev/null
 }
 
+# Bind USB device on Windows (triggers UAC elevation)
+bind_usb() {
+    local busid="$1"
+    if ! validate_busid "$busid"; then
+        log_error "BUSID inválido: $busid"
+        return 1
+    fi
+    powershell.exe -NoProfile -Command "Start-Process -FilePath \"$USBIPD_EXE\" -ArgumentList \"bind\", \"--busid\", \"$busid\", \"--force\" -Verb RunAs -Wait" 2>/dev/null
+}
+
+# Attach USB device to WSL (raw output)
+attach_usb_raw() {
+    local busid="$1"
+    if ! validate_busid "$busid"; then
+        echo "ERROR: BUSID inválido: $busid" >&2
+        return 1
+    fi
+    powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1
+}
+
 # Attach USB device to WSL
 attach_usb() {
     local busid="$1"
+    if ! validate_busid "$busid"; then
+        log_error "BUSID inválido: $busid"
+        return 1
+    fi
     log_info "Anexando dispositivo USB (BUSID=$busid) ao WSL..."
     powershell.exe -NoProfile -Command "& '$USBIPD_EXE' bind --busid $busid; & '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1
     # shellcheck disable=SC2181 # Direct $? check is clearer here
@@ -70,6 +99,10 @@ attach_usb() {
 # Detach USB device from WSL
 detach_usb() {
     local busid="$1"
+    if ! validate_busid "$busid"; then
+        log_error "BUSID inválido: $busid"
+        return 1
+    fi
     log_info "Desanexando dispositivo USB (BUSID=$busid)..."
     powershell.exe -NoProfile -Command "& '$USBIPD_EXE' detach --busid $busid" 2>&1
 }

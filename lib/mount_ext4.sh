@@ -3,51 +3,51 @@
 # Supports: EXT4, NTFS, FAT32, exFAT
 # Note: SUPPORTED_FS is defined in lib/constants.sh
 
-# Get parent disk for a partition (e.g., /dev/sdh1 -> /dev/sdh)
+# Get parent disk for a partition (e.g., /dev/sdh1 -> /dev/sdh, /dev/nvme0n1p1 -> /dev/nvme0n1)
 get_parent_disk() {
     local dev="$1"
-    # Remove partition number (e.g., /dev/sdh1 -> /dev/sdh)
-    echo "$dev" | sed -E 's/[0-9]+$//'
+    echo "$dev" | sed -E 's/p?[0-9]+$//'
 }
 
 # Check if a device is a system partition or already safely mounted
 is_safe_device() {
     local dev="$1"
-    local mnt label
+    local mnt label raw_label
     
     # Normalize path (remove trailing slash)
-    local target_mnt="${MOUNT_POINT:-/mnt/usb-driver}"
+    local target_mnt="${MOUNT_POINT:-$DEFAULT_MOUNT_POINT}"
     target_mnt="${target_mnt%/}"
     
     mnt=$(findmnt -rpno TARGET "$dev" 2>/dev/null | head -1)
     mnt="${mnt%/}" # Normalize
     
-    # 1. ABSOLUTE PATH BLACKLIST: System paths
-    if echo "$mnt" | grep -qE "^/(boot|etc|var|usr|bin|sbin|lib|run|dev|proc|sys|home|snap)?$"; then
+    # 1. ABSOLUTE PATH BLACKLIST: System paths (exact or subdirectories) and Windows DrvFs (/mnt/c, etc.)
+    if echo "$mnt" | grep -qE "^/$|^/(boot|etc|var|usr|bin|sbin|lib|lib64|run|dev|proc|sys|home|snap|root|opt|srv|tmp)(/|$)|^/mnt/[a-zA-Z](/|$)"; then
         return 1
     fi
     
     # 2. LABEL BLACKLIST: EFI and critical system labels
     # We removed "Windows" from here because the user's external HD might have it.
-    label=$(lsblk -no LABEL "$dev" 2>/dev/null | head -1 | tr -d ' ')
+    raw_label=$(lsblk -no LABEL "$dev" 2>/dev/null | head -1)
+    label=$(printf '%s' "$raw_label" | tr -d ' ')
     if echo "$label" | grep -qiE "^(SystemReserved|Recovery|EFI|boot|ESP)$"; then
         return 1
     fi
     
     # 3. IDENTIFY HOST SYSTEM DRIVE: Usually the one with "Windows" label AND Not Removable
-    # If it's internal (RM=0) and named "Windows", it's likely the host C: drive.
+    # If it's internal (RM=0) and named "Windows" (e.g., Windows, Windows 10, Windows 11), it's likely the host C: drive.
     # We only block it if it's NOT a USB transport.
     local rm tran
     rm=$(lsblk -no RM "$dev" 2>/dev/null | head -1)
     tran=$(lsblk -no TRAN "$dev" 2>/dev/null | head -1)
-    if [[ "$label" =~ ^Windows$ && "$rm" == "0" && "$tran" != "usb" ]]; then
+    if [[ "$label" =~ ^[Ww]indows([0-9]+)?$ && "$rm" == "0" && "$tran" != "usb" ]]; then
         return 1
     fi
     
     # 4. MOUNT POINT CHECK
     # Allow if not mounted, or if mounted inside our base MOUNT_POINT directory (or legacy one)
     [ -z "$mnt" ] && return 0
-    if [[ "$mnt" == "$target_mnt" || "$mnt" == "$target_mnt/"* || "$mnt" == "/mnt/usb-driver"* ]]; then
+    if [[ "$mnt" == "$target_mnt" || "$mnt" == "$target_mnt/"* || "$mnt" == "$DEFAULT_MOUNT_POINT"* ]]; then
         return 0
     fi
     
@@ -78,7 +78,7 @@ find_dev_by_vidpid() {
     
     # 2. Match it with any block device in /sys/block/sd*
     # We check if the block device's parent path is a subpath of the USB device path
-    for block_path in /sys/block/sd[a-z]; do
+    for block_path in /sys/block/sd*; do
         [ -L "$block_path/device" ] || continue
         local dev_link
         dev_link=$(readlink -f "$block_path/device")
@@ -266,7 +266,7 @@ list_available_devices() {
         printf "  %-7s %-45s " "$busid" "$desc" >&2
         echo -e "$status_text" >&2
         ((win_count++)) || true
-    done < <(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' list" 2>/dev/null | grep -i "Mass Storage\|Armazenamento\|UAS\|SCSI" || true)
+    done < <(list_usb_devices | grep -i "$USB_STORAGE_FILTER" || true)
     
     if [ $win_count -eq 0 ]; then
         log_info "Nenhum dispositivo USB adicional no Windows" >&2
@@ -305,6 +305,7 @@ mount_ext4() {
         return 1
     fi
     
+    mount_name=$(sanitize_mount_name "$mount_name" "usb-device")
     local mount_point="$base_mount/$mount_name"
     
     # Get filesystem type
@@ -392,8 +393,7 @@ find_busid_by_dev() {
     done
     
     if [ -n "$vid" ] && [ -n "$pid" ]; then
-        powershell.exe -NoProfile -Command "& '$USBIPD_EXE' list" 2>/dev/null | \
-            grep -i "Attached" | grep -i "$vid:$pid" | head -1 | awk '{print $1}'
+        list_usb_devices | grep -i "Attached" | grep -i "$vid:$pid" | head -1 | awk '{print $1}'
     fi
 }
 
@@ -479,15 +479,15 @@ safe_unmount() {
     
     log_success "Dispositivo desmontado de $target_path"
     
-    # Step 5: Always detach specific device from WSL
-    if [ -n "$device" ]; then
+    # Step 5: Detach specific device from WSL when --eject is requested
+    if $eject && [ -n "$device" ]; then
         log_info "Desanexando dispositivo do WSL..."
         local busid
         # Use subshell with || true to prevent script exit if device is gone
         busid=$(find_busid_by_dev "$device" 2>/dev/null || echo "")
         
-        if [ -n "$busid" ]; then
-            powershell.exe -NoProfile -Command "& '$USBIPD_EXE' detach --busid $busid" 2>/dev/null || true
+        if [ -n "$busid" ] && validate_busid "$busid"; then
+            detach_usb "$busid" >/dev/null 2>&1 || true
             log_success "Dispositivo $busid desanexado do WSL"
         else
             log_warn "Não foi possível encontrar o BUSID para desanexar o dispositivo $device"
@@ -495,6 +495,83 @@ safe_unmount() {
     fi
     
     return 0
+}
+
+# JSON output for available WSL and Windows USB devices
+list_available_devices_json() {
+    local target_mnt="${MOUNT_POINT:-$DEFAULT_MOUNT_POINT}"
+    target_mnt="${target_mnt%/}"
+
+    if ${SIMULATE_MODE:-false}; then
+        cat << 'EOF'
+{"wslDevices":[{"device":"/dev/sdb1","fstype":"ext4","label":"BACKUP_LINUX","size":"64G","mountPoint":"/mnt/usb-driver/BACKUP_LINUX","status":"mounted"}],"windowsDevices":[{"busid":"2-15","vidpid":"058f:6387","description":"USB Mass Storage Device","state":"Shared"},{"busid":"2-16","vidpid":"24a9:205a","description":"SanDisk Ultra USB 3.0","state":"NotShared"}]}
+EOF
+        return 0
+    fi
+
+    local wsl_json="" first_wsl=true
+    local pot_devs
+    pot_devs=$(lsblk -rpno NAME,FSTYPE,TYPE 2>/dev/null | awk -v fs="$SUPPORTED_FS" '$3=="part" && $2 ~ fs {print $1}')
+
+    for dev in $pot_devs; do
+        is_safe_device "$dev" || continue
+
+        local is_usb=false rm tran parent
+        rm=$(lsblk -no RM "$dev" 2>/dev/null | head -1)
+        if [ "$rm" = "1" ]; then
+            is_usb=true
+        else
+            tran=$(lsblk -no TRAN "$dev" 2>/dev/null | head -1)
+            if [ "$tran" = "usb" ]; then
+                is_usb=true
+            else
+                parent=$(get_parent_disk "$dev")
+                tran=$(lsblk -no TRAN "$parent" 2>/dev/null | head -1)
+                [ "$tran" = "usb" ] && is_usb=true
+            fi
+        fi
+        [ "$is_usb" = "false" ] && continue
+
+        local fs size label mnt status
+        fs=$(lsblk -no FSTYPE "$dev" 2>/dev/null | head -1)
+        size=$(lsblk -no SIZE "$dev" 2>/dev/null | head -1)
+        label=$(lsblk -no LABEL "$dev" 2>/dev/null | head -1)
+        mnt=$(findmnt -rpno TARGET "$dev" 2>/dev/null | head -1)
+        mnt="${mnt%/}"
+
+        if [ -n "$mnt" ]; then
+            if [[ "$mnt" == "$target_mnt"* ]]; then
+                status="mounted"
+            else
+                status="in_use"
+            fi
+        else
+            status="available"
+        fi
+
+        $first_wsl || wsl_json+=","
+        first_wsl=false
+        wsl_json+=$(printf '{"device":"%s","fstype":"%s","label":"%s","size":"%s","mountPoint":"%s","status":"%s"}' \
+            "$(json_escape "$dev")" "$(json_escape "$fs")" "$(json_escape "$label")" \
+            "$(json_escape "$size")" "$(json_escape "$mnt")" "$(json_escape "$status")")
+    done
+
+    local win_json="" first_win=true
+    while IFS= read -r line; do
+        local busid vidpid desc state
+        busid=$(echo "$line" | awk '{print $1}')
+        validate_busid "$busid" || continue
+        vidpid=$(echo "$line" | awk '{print $2}')
+        state=$(parse_usbipd_state "$line")
+        desc=$(echo "$line" | awk '{for(i=3;i<NF;i++) printf "%s ", $i}' | sed 's/[[:space:]]*$//')
+
+        $first_win || win_json+=","
+        first_win=false
+        win_json+=$(printf '{"busid":"%s","vidpid":"%s","description":"%s","state":"%s"}' \
+            "$(json_escape "$busid")" "$(json_escape "$vidpid")" "$(json_escape "$desc")" "$(json_escape "$state")")
+    done < <(list_usb_devices | grep -i "$USB_STORAGE_FILTER" || true)
+
+    printf '{"wslDevices":[%s],"windowsDevices":[%s]}\n' "$wsl_json" "$win_json"
 }
 
 # Alias for backward compatibility

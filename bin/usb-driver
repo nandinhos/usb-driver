@@ -26,13 +26,10 @@ source "$PROJECT_ROOT/lib/usbipd.sh"
 source "$PROJECT_ROOT/lib/mount_ext4.sh"
 
 # =========================
-# Load config
+# Load config safely (no arbitrary code execution)
 # =========================
 CONFIG_FILE="$HOME/.config/usb-driver/config"
-if [ -f "$CONFIG_FILE" ]; then
-    # shellcheck source=/dev/null
-    source "$CONFIG_FILE"
-fi
+load_safe_config "$CONFIG_FILE"
 
 # =========================
 # Config Migration (v0.6.0+)
@@ -44,30 +41,32 @@ if [ -d "$HOME/.config/bkp-pendrive" ] && [ ! -d "$HOME/.config/usb-driver" ]; t
 fi
 
 # Defaults
-MOUNT_POINT="${MOUNT_POINT:-/mnt/usb-driver}"
+MOUNT_POINT="${MOUNT_POINT:-$DEFAULT_MOUNT_POINT}"
 
 # =========================
 # Legacy Migration (v0.5.1+)
 # =========================
-if [ "$MOUNT_POINT" = "/mnt/bkp-pendrive" ]; then
-    log_warn "Migrando caminho legado: /mnt/bkp-pendrive -> /mnt/usb-driver"
+if [ "$MOUNT_POINT" = "$LEGACY_MOUNT_POINT" ]; then
+    log_warn "Migrando caminho legado: $LEGACY_MOUNT_POINT -> $DEFAULT_MOUNT_POINT"
     
     # Update current session
-    MOUNT_POINT="/mnt/usb-driver"
+    MOUNT_POINT="$DEFAULT_MOUNT_POINT"
     
     # Update config file if exists
     if [ -f "$CONFIG_FILE" ]; then
-        sed -i 's|MOUNT_POINT="/mnt/bkp-pendrive"|MOUNT_POINT="/mnt/usb-driver"|' "$CONFIG_FILE"
+        sed -i "s|MOUNT_POINT=\"$LEGACY_MOUNT_POINT\"|MOUNT_POINT=\"$DEFAULT_MOUNT_POINT\"|" "$CONFIG_FILE"
         log_success "Configuração atualizada para o novo padrão."
     fi
     
     # Try to remove old empty directory if possible
-    if [ -d "/mnt/bkp-pendrive" ] && ! mountpoint -q "/mnt/bkp-pendrive" 2>/dev/null; then
-        sudo rmdir "/mnt/bkp-pendrive" 2>/dev/null || true
+    if [ -d "$LEGACY_MOUNT_POINT" ] && ! mountpoint -q "$LEGACY_MOUNT_POINT" 2>/dev/null; then
+        sudo rmdir "$LEGACY_MOUNT_POINT" 2>/dev/null || true
     fi
 fi
 PENDRIVE_LABEL="${PENDRIVE_LABEL:-}"
 SIMULATE_MODE=false
+JSON_MODE=false
+ALL_MODE=false
 
 # =========================
 # Version
@@ -107,6 +106,7 @@ show_help() {
     echo -e "  ${CYAN}--force${NC}         Força desmontagem mesmo sob uso"
     echo -e "  ${CYAN}--eject${NC}         Ejeta do WSL após desmontar"
     echo -e "  ${CYAN}--simulate${NC}      Executa em modo de demonstração"
+    echo -e "  ${CYAN}--json${NC}          Saída estruturada em JSON (para integrações/GUI)"
     echo -e "  ${CYAN}-v, --verbose${NC}   Mostra detalhes adicionais de execução"
     echo
     echo -e "${YELLOW}${BOLD}EXEMPLOS:${NC}"
@@ -136,6 +136,12 @@ for arg in "$@"; do
         --simulate)
             SIMULATE_MODE=true
             ;;
+        --json)
+            JSON_MODE=true
+            ;;
+        --all|-a)
+            ALL_MODE=true
+            ;;
         --force|--eject)
             EXTRA_FLAGS+=("$arg")
             ;;
@@ -144,6 +150,9 @@ for arg in "$@"; do
             ;;
         -v|--verbose)
             VERBOSE_MODE=true
+            ;;
+        -h|--help)
+            COMMAND="help"
             ;;
         *)
             if [ -z "$COMMAND" ]; then
@@ -173,7 +182,7 @@ select_usb_device() {
     while IFS= read -r line; do
         local busid vidpid desc state
         busid=$(echo "$line" | awk '{print $1}')
-        [[ ! "$busid" =~ ^[0-9]+-[0-9]+$ ]] && continue
+        validate_busid "$busid" || continue
         
         vidpid=$(echo "$line" | awk '{print $2}')
         state=$(parse_usbipd_state "$line")
@@ -200,11 +209,17 @@ select_usb_device() {
         fi
         ((i++)) || true
         
-    done < <(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' list" 2>/dev/null | grep -i "Mass Storage\|Armazenamento\|UAS\|SCSI" || true)
+    done < <(list_usb_devices | grep -i "$USB_STORAGE_FILTER" || true)
     
     if [ ${#options[@]} -eq 0 ]; then
         echo -e "${RED}[ERROR]${NC} Nenhum dispositivo USB encontrado no Windows" >&2
         return 1
+    fi
+
+    # --all / -a flag: select all without prompting
+    if $ALL_MODE; then
+        printf "%s\n" "${options[@]}"
+        return 0
     fi
 
     # Add "All" option if more than one device
@@ -238,22 +253,43 @@ select_usb_device() {
     echo "${options[$((choice-1))]}"
 }
 cmd_up() {
-    print_step "Iniciando montagem do dispositivo..."
-    log_info "usb-driver v$VERSION - Iniciando montagem"
+    if $SIMULATE_MODE; then
+        if $JSON_MODE; then
+            printf '{"ok":true,"simulated":true,"mountPoint":"%s/SIMULATED_USB","message":"Dispositivo simulado montado"}\n' "$(json_escape "$MOUNT_POINT")"
+        else
+            print_step "Iniciando montagem do dispositivo..."
+            log_info "[SIMULATE] Verificando usbipd-win..."
+            log_info "[SIMULATE] Anexando USB ao WSL..."
+            log_info "[SIMULATE] Detectando dispositivo USB..."
+            log_success "[SIMULATE] Pendrive montado em $MOUNT_POINT"
+        fi
+        return 0
+    fi
+
+    if ! $JSON_MODE; then
+        print_step "Iniciando montagem do dispositivo..."
+        log_info "usb-driver v$VERSION - Iniciando montagem"
+    fi
     log_debug "MOUNT_POINT=$MOUNT_POINT"
-    log_debug "SELECT_MODE=$SELECT_MODE, VERBOSE_MODE=$VERBOSE_MODE"
+    log_debug "SELECT_MODE=$SELECT_MODE, ALL_MODE=$ALL_MODE, VERBOSE_MODE=$VERBOSE_MODE"
     
     # 1. Health check (basics)
     log_debug "Running health checks..."
-    health_check_wsl || exit 1
-    health_check_usbipd || exit 1
-    
-    if $SIMULATE_MODE; then
-        log_info "[SIMULATE] Verificando usbipd-win..."
-        log_info "[SIMULATE] Anexando USB ao WSL..."
-        log_info "[SIMULATE] Detectando dispositivo USB..."
-        log_success "[SIMULATE] Pendrive montado em $MOUNT_POINT"
-        return 0
+    if ! check_wsl; then
+        if $JSON_MODE; then
+            echo '{"ok":false,"message":"Não está executando no WSL"}'
+        else
+            health_check_wsl || true
+        fi
+        exit 1
+    fi
+    if ! check_usbipd_installed; then
+        if $JSON_MODE; then
+            echo '{"ok":false,"message":"usbipd-win não encontrado"}'
+        else
+            health_check_usbipd || true
+        fi
+        exit 1
     fi
 
     # 2. Selection
@@ -286,33 +322,33 @@ cmd_up() {
         
         # Try attach first (works if already bound)
         local attach_output
-        attach_output=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1 || true)
+        attach_output=$(attach_usb_raw "$busid" || true)
         
         if echo "$attach_output" | grep -qiE "not shared|bind"; then
             # Device needs to be bound first (requires admin)
-            echo
+            echo >&2
             # Try to detach first to clear any stuck sessions
-            powershell.exe -NoProfile -Command "& '$USBIPD_EXE' detach --busid $busid" 2>/dev/null || true
+            detach_usb "$busid" >/dev/null 2>&1 || true
 
             # Use PowerShell to start-process with RunAs (triggers UAC)
-            powershell.exe -NoProfile -Command "Start-Process -FilePath \"$USBIPD_EXE\" -ArgumentList \"bind\", \"--busid\", \"$busid\", \"--force\" -Verb RunAs -Wait" 2>/dev/null
+            bind_usb "$busid"
             
-            log_info "Autorização concluída. Aguardando estabilização (5s)..."
-            sleep 5
+            log_info "Autorização concluída. Aguardando estabilização (${STABILIZATION_DELAY}s)..."
+            sleep "$STABILIZATION_DELAY"
             
             # Try attach again with a mini-retry loop
             log_info "Tentando anexar novamente..."
             local a_retry=0
-            while [ $a_retry -lt 3 ]; do
-                attach_output=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1 || true)
+            while [ "$a_retry" -lt "$ATTACH_RETRIES" ]; do
+                attach_output=$(attach_usb_raw "$busid" || true)
                 if echo "$attach_output" | grep -qi "success\|already\|Attached"; then
                     break
                 fi
                 if echo "$attach_output" | grep -qi "busy"; then
-                    log_warn "Dispositivo ocupado no Windows. Nova tentativa em 3s... ($((a_retry+1))/3)"
-                    sleep 3
+                    log_warn "Dispositivo ocupado no Windows. Nova tentativa em ${ATTACH_DELAY}s... ($((a_retry+1))/$ATTACH_RETRIES)"
+                    sleep "$ATTACH_DELAY"
                 else
-                    echo "$attach_output"
+                    echo "$attach_output" >&2
                     break
                 fi
                 ((a_retry++)) || true
@@ -322,17 +358,17 @@ cmd_up() {
         # Wait for device to appear in WSL (with a retry loop)
         log_info "Aguardando inicialização do dispositivo (pinning by $vidpid)..."
         local retry=0
-        while [ $retry -lt 15 ]; do
+        while [ "$retry" -lt "$DEVICE_DETECTION_RETRIES" ]; do
             # Use VID:PID for pinning detection
             device=$(detect_usb_device "$vidpid" || true)
             if [ -n "$device" ]; then
                 break
             fi
-            echo -n "."
+            echo -n "." >&2
             sleep 2
             ((retry++)) || true
         done
-        echo ""
+        echo "" >&2
         
     elif [ "$type" = "wsl" ]; then
         # Selection is already in WSL
@@ -347,35 +383,95 @@ cmd_up() {
         continue
     fi
     
-    # 4. Determine mount name
+    # 4. Determine mount name (sanitized against path traversal)
     local label mount_name
-    label=$(lsblk -no LABEL "$device" 2>/dev/null | head -1 | tr -d ' ')
-    if [ -n "$label" ]; then
-        mount_name="$label"
-    else
-        # Use BUSID if no label
-        mount_name="usb-$id"
-    fi
+    label=$(lsblk -no LABEL "$device" 2>/dev/null | head -1)
+    mount_name=$(sanitize_mount_name "$label" "usb-$id")
     
     # 5. Perform mount in subdirectory
-    mount_ext4 "$device" "$mount_name" || true
+    if $JSON_MODE; then
+        if mount_ext4 "$device" "$mount_name" >/dev/null 2>&1; then
+            printf '{"ok":true,"device":"%s","mountPoint":"%s/%s"}\n' \
+                "$(json_escape "$device")" "$(json_escape "${MOUNT_POINT%/}")" "$(json_escape "$mount_name")"
+        else
+            printf '{"ok":false,"device":"%s","message":"Falha ao montar dispositivo"}\n' "$(json_escape "$device")"
+            return 1
+        fi
+    else
+        mount_ext4 "$device" "$mount_name" || true
+    fi
     done
 }
 cmd_down() {
-    print_step "Desmontando dispositivo(s)..."
-    
-    local base_mount="${MOUNT_POINT:-/mnt/usb-driver}"
+    local target_arg="${1:-}"
+    local base_mount="${MOUNT_POINT:-$DEFAULT_MOUNT_POINT}"
     base_mount="${base_mount%/}"
+
+    if $SIMULATE_MODE; then
+        if $JSON_MODE; then
+            printf '{"ok":true,"simulated":true,"unmounted":"%s","message":"Simulação de desmontagem concluída"}\n' "$(json_escape "${target_arg:-$base_mount/SIMULATED_USB}")"
+        else
+            print_step "Desmontando dispositivo(s)..."
+            log_success "[SIMULATE] Dispositivo desmontado com segurança"
+        fi
+        return 0
+    fi
+
+    # Non-interactive unmount when explicit target path is passed (used by GUI / scripts)
+    if [ -n "$target_arg" ]; then
+        target_arg="${target_arg%/}"
+        if [[ "$target_arg" != "$base_mount/"* && "$target_arg" != "$LEGACY_MOUNT_POINT/"* ]]; then
+            if $JSON_MODE; then
+                printf '{"ok":false,"message":"Alvo fora dos diretórios gerenciados"}\n'
+            else
+                log_error "Alvo fora dos diretórios gerenciados: $target_arg"
+            fi
+            return 1
+        fi
+        if $JSON_MODE; then
+            if safe_unmount "$target_arg" "${EXTRA_FLAGS[@]}" >/dev/null 2>&1; then
+                printf '{"ok":true,"unmounted":"%s"}\n' "$(json_escape "$target_arg")"
+                return 0
+            else
+                printf '{"ok":false,"unmounted":"%s","message":"Falha ao desmontar dispositivo"}\n' "$(json_escape "$target_arg")"
+                return 1
+            fi
+        else
+            safe_unmount "$target_arg" "${EXTRA_FLAGS[@]}"
+            return $?
+        fi
+    fi
+
+    if ! $JSON_MODE; then
+        print_step "Desmontando dispositivo(s)..."
+    fi
     
     # Find all active mounts under our base directory OR legacy directory
     # sorted by path length (descending)
     local active_mounts=()
     while IFS= read -r mnt; do
         [ -n "$mnt" ] && active_mounts+=("$mnt")
-    done < <(findmnt -lo TARGET -n | grep -E "^($base_mount|/mnt/bkp-pendrive)" | awk '{ print length($0), $0 }' | sort -rn | cut -d" " -f2- || true)
+    done < <(findmnt -lo TARGET -n | grep -E "^($base_mount|$LEGACY_MOUNT_POINT)" | awk '{ print length($0), $0 }' | sort -rn | cut -d" " -f2- || true)
     
     if [ ${#active_mounts[@]} -eq 0 ]; then
-        log_warn "Nenhum dispositivo montado em pastas controladas por usb-driver"
+        if $JSON_MODE; then
+            echo '{"ok":true,"unmounted":"","message":"Nenhum dispositivo montado"}'
+        else
+            log_warn "Nenhum dispositivo montado em pastas controladas por usb-driver"
+        fi
+        return 0
+    fi
+
+    if $JSON_MODE; then
+        local unmounted_list="" first_u=true
+        for mnt in "${active_mounts[@]}"; do
+            if safe_unmount "$mnt" "${EXTRA_FLAGS[@]}" >/dev/null 2>&1; then
+                $first_u || unmounted_list+=","
+                first_u=false
+                unmounted_list+="\"$(json_escape "$mnt")\""
+            fi
+        done
+        printf '{"ok":true,"unmounted":[%s]}\n' "$unmounted_list"
         return 0
     fi
     
@@ -419,10 +515,32 @@ cmd_down() {
 }
 
 cmd_status() {
-    log_info "usb-driver v$VERSION"
-    
-    local base_mount="${MOUNT_POINT:-/mnt/usb-driver}"
+    local base_mount="${MOUNT_POINT:-$DEFAULT_MOUNT_POINT}"
     base_mount="${base_mount%/}"
+
+    if $JSON_MODE; then
+        if $SIMULATE_MODE; then
+            printf '{"mountPoint":"%s","mounts":[{"device":"/dev/sdb1","target":"%s/BACKUP_LINUX","fstype":"ext4"}]}\n' \
+                "$(json_escape "$base_mount")" "$(json_escape "$base_mount")"
+            return 0
+        fi
+        local mounts_json="" first_m=true
+        while IFS= read -r mnt; do
+            if [ -n "$mnt" ]; then
+                local dev fs
+                dev=$(findmnt -n -o SOURCE "$mnt")
+                fs=$(findmnt -n -o FSTYPE "$mnt")
+                $first_m || mounts_json+=","
+                first_m=false
+                mounts_json+=$(printf '{"device":"%s","target":"%s","fstype":"%s"}' \
+                    "$(json_escape "$dev")" "$(json_escape "$mnt")" "$(json_escape "$fs")")
+            fi
+        done < <(findmnt -lo TARGET -n | grep -E "^($base_mount|$LEGACY_MOUNT_POINT)($|/)" || true)
+        printf '{"mountPoint":"%s","mounts":[%s]}\n' "$(json_escape "$base_mount")" "$mounts_json"
+        return 0
+    fi
+
+    log_info "usb-driver v$VERSION"
     
     local found=false
     # Scan for both loop (HD) and USB mounts (including legacy path)
@@ -434,7 +552,7 @@ cmd_status() {
             log_success "Dispositivo: $dev -> $mnt ($fs)"
             found=true
         fi
-    done < <(findmnt -lo TARGET -n | grep -E "^($base_mount|/mnt/bkp-pendrive)($|/)" || true)
+    done < <(findmnt -lo TARGET -n | grep -E "^($base_mount|$LEGACY_MOUNT_POINT)($|/)" || true)
     
     if ! $found; then
         log_warn "Nenhum dispositivo montado em ${YELLOW}$base_mount${NC}"
@@ -459,43 +577,78 @@ cmd_attach() {
     local busid="$1"
     
     if [ -z "$busid" ]; then
-        log_error "BUSID não especificado"
-        log_hint "Uso: usb-driver attach <BUSID>"
-        log_hint "Execute 'usb-driver list' para ver os BUSIDs disponíveis"
+        if $JSON_MODE; then
+            echo '{"ok":false,"message":"BUSID não especificado"}'
+        else
+            log_error "BUSID não especificado"
+            log_hint "Uso: usb-driver attach <BUSID>"
+            log_hint "Execute 'usb-driver list' para ver os BUSIDs disponíveis"
+        fi
+        return 1
+    fi
+
+    if ! validate_busid "$busid"; then
+        if $JSON_MODE; then
+            printf '{"ok":false,"message":"BUSID inválido: %s"}\n' "$(json_escape "$busid")"
+        else
+            log_error "BUSID inválido: $busid (formato esperado: X-Y, ex: 2-4)"
+        fi
         return 1
     fi
     
-    print_step "Anexando dispositivo $busid ao WSL..."
+    if ! $JSON_MODE; then
+        print_step "Anexando dispositivo $busid ao WSL..."
+    fi
     
-    if ! require_usbipd; then
+    if ! check_usbipd_installed; then
+        if $JSON_MODE; then
+            echo '{"ok":false,"message":"usbipd-win não encontrado"}'
+        else
+            require_usbipd || true
+        fi
         return 1
     fi
     
     # Try to attach
-    log_info "Executando: usbipd attach --wsl --busid $busid"
+    if ! $JSON_MODE; then
+        log_info "Executando: usbipd attach --wsl --busid $busid"
+    fi
     
     local result
-    result=$(powershell.exe -NoProfile -Command "& '$USBIPD_EXE' attach --wsl --busid $busid" 2>&1)
+    result=$(attach_usb_raw "$busid" || true)
     
     if echo "$result" | grep -qi "error\|denied\|not shared"; then
-        log_error "Falha ao anexar dispositivo"
-        if echo "$result" | grep -qi "not shared"; then
-            log_warn "Dispositivo precisa ser compartilhado primeiro"
-            echo
-            log_info "Execute no PowerShell como ADMIN:"
-            echo -e "    ${BOLD}usbipd bind --busid $busid --force${NC}"
-            echo
-            log_info "Depois tente novamente: usb-driver attach $busid"
+        if $JSON_MODE; then
+            printf '{"ok":false,"busid":"%s","needsBind":%s,"message":"%s"}\n' \
+                "$(json_escape "$busid")" \
+                "$(echo "$result" | grep -qi "not shared" && echo true || echo false)" \
+                "$(json_escape "$result")"
+        else
+            log_error "Falha ao anexar dispositivo"
+            if echo "$result" | grep -qi "not shared"; then
+                log_warn "Dispositivo precisa ser compartilhado primeiro"
+                echo
+                log_info "Execute no PowerShell como ADMIN:"
+                echo -e "    ${BOLD}usbipd bind --busid $busid --force${NC}"
+                echo
+                log_info "Depois tente novamente: usb-driver attach $busid"
+            fi
         fi
         return 1
     fi
     
     # Wait for device to appear
-    log_info "Aguardando dispositivo aparecer no WSL..."
-    sleep 3
+    if ! $JSON_MODE; then
+        log_info "Aguardando dispositivo aparecer no WSL..."
+    fi
+    sleep "$ATTACH_DELAY"
     
-    log_success "Dispositivo $busid anexado ao WSL"
-    log_hint "Execute 'usb-driver list' para verificar"
+    if $JSON_MODE; then
+        printf '{"ok":true,"busid":"%s","message":"Dispositivo anexado ao WSL"}\n' "$(json_escape "$busid")"
+    else
+        log_success "Dispositivo $busid anexado ao WSL"
+        log_hint "Execute 'usb-driver list' para verificar"
+    fi
     return 0
 }
 
@@ -507,7 +660,7 @@ case "$COMMAND" in
         cmd_up
         ;;
     down|unmount)
-        cmd_down
+        cmd_down "$BUSID_ARG"
         ;;
     status)
         cmd_status
@@ -515,11 +668,19 @@ case "$COMMAND" in
     list)
         # Disable set -e for device enumeration (grep may return 1 for empty results)
         set +e
-        list_available_devices
+        if $JSON_MODE; then
+            list_available_devices_json
+        else
+            list_available_devices
+        fi
         set -e
         ;;
     check)
-        run_health_check
+        if $JSON_MODE; then
+            run_health_check_json
+        else
+            run_health_check
+        fi
         ;;
     install)
         cmd_install
