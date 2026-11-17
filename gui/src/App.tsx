@@ -368,7 +368,7 @@ export default function App() {
                     device={dev}
                     busy={busy}
                     t={t}
-                    onMount={() => handleMount()}
+                    onMount={() => handleMount(dev.device)}
                     onUnmount={handleUnmount}
                     onOpenExplorer={handleOpenExplorer}
                   />
@@ -398,6 +398,7 @@ export default function App() {
                     onBind={handleBind}
                     onMount={handleMount}
                     onDetach={handleDetach}
+                    onUnmountWsl={() => handleUnmount('__ALL__', true)}
                   />
                 ))
               )}

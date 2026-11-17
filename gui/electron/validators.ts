@@ -1,8 +1,13 @@
 const BUSID_REGEX = /^[0-9]+-[0-9]+(\.[0-9]+)*$/;
+const DEVICE_NODE_REGEX = /^\/dev\/sd[a-z]+[0-9]*$/;
 const SAFE_MOUNT_PATH_REGEX = /^\/mnt\/(usb-driver|bkp-pendrive)(\/[A-Za-z0-9._-]+)?$/;
 
 export function isValidBusid(busid: string): boolean {
   return typeof busid === 'string' && BUSID_REGEX.test(busid.trim());
+}
+
+export function isValidDeviceNode(dev: string): boolean {
+  return typeof dev === 'string' && DEVICE_NODE_REGEX.test(dev.trim());
 }
 
 export function isValidMountPath(targetPath: string): boolean {

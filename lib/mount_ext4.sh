@@ -3,6 +3,15 @@
 # Supports: EXT4, NTFS, FAT32, exFAT
 # Note: SUPPORTED_FS is defined in lib/constants.sh
 
+# Non-interactive sudo when running in JSON/GUI mode so it never hangs waiting for TTY password
+_sudo() {
+    if ${JSON_MODE:-false}; then
+        sudo -n "$@"
+    else
+        sudo "$@"
+    fi
+}
+
 # Get parent disk for a partition (e.g., /dev/sdh1 -> /dev/sdh, /dev/nvme0n1p1 -> /dev/nvme0n1)
 get_parent_disk() {
     local dev="$1"
@@ -289,7 +298,13 @@ detect_device_by_label() {
 # Get filesystem type of device
 get_device_fstype() {
     local device="$1"
-    sudo blkid -o value -s TYPE "$device" 2>/dev/null
+    local fs
+    fs=$(lsblk -no FSTYPE "$device" 2>/dev/null | head -1)
+    if [ -n "$fs" ]; then
+        echo "$fs"
+        return 0
+    fi
+    _sudo blkid -o value -s TYPE "$device" 2>/dev/null
 }
 
 # Mount USB device (any supported filesystem)
@@ -333,27 +348,43 @@ mount_ext4() {
         return 1
     fi
     
+    # Pre-flight driver checks before creating mount directory
+    if [[ "$fstype" == "exfat" ]] && ! grep -qw exfat /proc/filesystems 2>/dev/null && ! command -v mount.exfat-fuse &>/dev/null; then
+        log_error "Suporte a exFAT ausente no WSL2. Instale com: sudo apt install exfat-fuse exfatprogs"
+        return 1
+    fi
+
     # Create mountpoint
-    sudo mkdir -p "$mount_point"
+    _sudo mkdir -p "$mount_point"
     
     # Mount based on filesystem type
     case "$fstype" in
         ext4|ext3|ext2)
-            sudo mount "$device" "$mount_point"
+            _sudo mount "$device" "$mount_point"
             ;;
         ntfs|fuseblk)
             if command -v ntfs-3g &>/dev/null; then
-                sudo ntfs-3g "$device" "$mount_point" -o "rw,uid=$(id -u),gid=$(id -g)"
+                _sudo ntfs-3g "$device" "$mount_point" -o "rw,uid=$(id -u),gid=$(id -g)"
             else
                 log_error "Driver ntfs-3g não encontrado. Por favor, instale-o: sudo apt install ntfs-3g"
                 return 1
             fi
             ;;
-        vfat|exfat)
-            sudo mount "$device" "$mount_point" -o "uid=$(id -u),gid=$(id -g)"
+        vfat)
+            _sudo mount "$device" "$mount_point" -o "uid=$(id -u),gid=$(id -g)"
+            ;;
+        exfat)
+            if grep -qw exfat /proc/filesystems 2>/dev/null; then
+                _sudo mount "$device" "$mount_point" -o "uid=$(id -u),gid=$(id -g)"
+            elif command -v mount.exfat-fuse &>/dev/null; then
+                _sudo mount.exfat-fuse "$device" "$mount_point" -o "uid=$(id -u),gid=$(id -g)"
+            else
+                log_error "Suporte a exFAT ausente no WSL2. Instale com: sudo apt install exfat-fuse exfatprogs"
+                return 1
+            fi
             ;;
         *)
-            sudo mount "$device" "$mount_point"
+            _sudo mount "$device" "$mount_point"
             ;;
     esac
     
@@ -461,9 +492,9 @@ safe_unmount() {
     
     # Step 4: Unmount
     if $force; then
-        sudo umount -f "$target_path"
+        _sudo umount -f "$target_path"
     else
-        sudo umount "$target_path"
+        _sudo umount "$target_path"
     fi
     
     # shellcheck disable=SC2181 # Conditional mount prevents direct check
@@ -474,7 +505,7 @@ safe_unmount() {
     
     # Remove subdirectory if it's not the base mount
     if [ "$target_path" != "$base_mount" ]; then
-        sudo rmdir "$target_path" 2>/dev/null || true
+        _sudo rmdir "$target_path" 2>/dev/null || true
     fi
     
     log_success "Dispositivo desmontado de $target_path"

@@ -44,6 +44,12 @@ validate_busid() {
     [[ "$busid" =~ ^[0-9]+-[0-9]+(\.[0-9]+)*$ ]]
 }
 
+# Validate Linux block device path (e.g., /dev/sdb1)
+validate_device_node() {
+    local dev="$1"
+    [[ "$dev" =~ ^/dev/sd[a-z]+[0-9]*$ ]]
+}
+
 # Sanitize mount directory name (whitelist alphanumeric, dot, underscore, hyphen)
 sanitize_mount_name() {
     local raw="$1"

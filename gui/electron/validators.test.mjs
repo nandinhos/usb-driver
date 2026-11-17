@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildWslUncPath,
   isValidBusid,
+  isValidDeviceNode,
   isValidMountPath,
   parseJsonOutput,
 } from '../dist-electron/validators.js';
@@ -13,6 +14,13 @@ test('isValidBusid aceita BUSIDs válidos e bloqueia injeções', () => {
   assert.equal(isValidBusid('1-1; calc.exe'), false);
   assert.equal(isValidBusid('$(whoami)'), false);
   assert.equal(isValidBusid(''), false);
+});
+
+test('isValidDeviceNode aceita apenas /dev/sd* válidos', () => {
+  assert.equal(isValidDeviceNode('/dev/sdg1'), true);
+  assert.equal(isValidDeviceNode('/dev/sda'), true);
+  assert.equal(isValidDeviceNode('/dev/sdg1; rm -rf /'), false);
+  assert.equal(isValidDeviceNode('/etc/passwd'), false);
 });
 
 test('isValidMountPath aceita apenas diretórios gerenciados sem traversal', () => {

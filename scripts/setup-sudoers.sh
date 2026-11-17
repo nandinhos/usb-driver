@@ -43,6 +43,7 @@ BIN_BLKID=$(command -v blkid)
 BIN_MKDIR=$(command -v mkdir)
 BIN_RMDIR=$(command -v rmdir)
 BIN_NTFS3G=$(command -v ntfs-3g || true)
+BIN_EXFAT=$(command -v mount.exfat-fuse || true)
 
 RULE_CONTENT="# Gerado por usb-driver/scripts/setup-sudoers.sh (privilégio mínimo)
 ${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_BLKID} -o value -s TYPE /dev/sd*
@@ -53,7 +54,12 @@ ${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_UMOUNT} /mnt/usb-driver/*, ${BIN_UMOU
 
 if [ -n "$BIN_NTFS3G" ]; then
     RULE_CONTENT="${RULE_CONTENT}
-${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_NTFS3G} /dev/sd* /mnt/usb-driver/*"
+${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_NTFS3G} /dev/sd* /mnt/usb-driver/*, ${BIN_NTFS3G} /dev/sd* /mnt/usb-driver/* -o *"
+fi
+
+if [ -n "$BIN_EXFAT" ]; then
+    RULE_CONTENT="${RULE_CONTENT}
+${CURRENT_USER} ALL=(root) NOPASSWD: ${BIN_EXFAT} /dev/sd* /mnt/usb-driver/*, ${BIN_EXFAT} /dev/sd* /mnt/usb-driver/* -o *"
 fi
 
 if $DRY_RUN; then

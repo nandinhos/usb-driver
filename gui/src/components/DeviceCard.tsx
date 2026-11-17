@@ -139,6 +139,7 @@ interface WindowsDeviceCardProps {
   onBind: (busid: string) => void;
   onMount: (busid: string) => void;
   onDetach: (busid: string) => void;
+  onUnmountWsl: () => void;
 }
 
 export function WindowsDeviceCard({
@@ -149,6 +150,7 @@ export function WindowsDeviceCard({
   onBind,
   onMount,
   onDetach,
+  onUnmountWsl,
 }: WindowsDeviceCardProps) {
   const needsBind = device.state === 'NotShared';
   const isAttached = device.state === 'Attached';
@@ -215,16 +217,28 @@ export function WindowsDeviceCard({
                   {t.mountWsl}
                 </button>
               )}
-              {isAttached && (
+              {isAttached && isMountedInWsl ? (
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => onDetach(device.busid)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
+                  onClick={onUnmountWsl}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
                 >
                   <Power className="h-3.5 w-3.5" />
-                  {t.detachWsl}
+                  {t.unmountWsl}
                 </button>
+              ) : (
+                isAttached && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onDetach(device.busid)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
+                  >
+                    <Power className="h-3.5 w-3.5" />
+                    {t.detachWsl}
+                  </button>
+                )
               )}
             </>
           )}

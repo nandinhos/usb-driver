@@ -253,6 +253,8 @@ select_usb_device() {
     echo "${options[$((choice-1))]}"
 }
 cmd_up() {
+    local direct_target="${1:-}"
+
     if $SIMULATE_MODE; then
         if $JSON_MODE; then
             printf '{"ok":true,"simulated":true,"mountPoint":"%s/SIMULATED_USB","message":"Dispositivo simulado montado"}\n' "$(json_escape "$MOUNT_POINT")"
@@ -264,6 +266,44 @@ cmd_up() {
             log_success "[SIMULATE] Pendrive montado em $MOUNT_POINT"
         fi
         return 0
+    fi
+
+    # Direct mount of an already-attached WSL block device (e.g., /dev/sdg1)
+    if [ -n "$direct_target" ]; then
+        if ! validate_device_node "$direct_target"; then
+            if $JSON_MODE; then
+                printf '{"ok":false,"message":"Dispositivo inválido: %s"}\n' "$(json_escape "$direct_target")"
+            else
+                log_error "Dispositivo inválido: $direct_target"
+            fi
+            return 1
+        fi
+        if ! is_safe_device "$direct_target"; then
+            if $JSON_MODE; then
+                printf '{"ok":false,"message":"Dispositivo bloqueado pela política de segurança: %s"}\n' "$(json_escape "$direct_target")"
+            else
+                log_error "Dispositivo bloqueado pela política de segurança: $direct_target"
+            fi
+            return 1
+        fi
+        local d_label d_mount_name d_out d_err
+        d_label=$(lsblk -no LABEL "$direct_target" 2>/dev/null | head -1)
+        d_mount_name=$(sanitize_mount_name "$d_label" "usb-$(basename "$direct_target")")
+        if $JSON_MODE; then
+            if d_out=$(mount_ext4 "$direct_target" "$d_mount_name" 2>&1); then
+                printf '{"ok":true,"device":"%s","mountPoint":"%s/%s"}\n' \
+                    "$(json_escape "$direct_target")" "$(json_escape "${MOUNT_POINT%/}")" "$(json_escape "$d_mount_name")"
+                return 0
+            else
+                d_err=$(printf '%s' "$d_out" | tail -n 1 | sed 's/\x1b\[[0-9;]*m//g')
+                printf '{"ok":false,"device":"%s","message":"%s"}\n' \
+                    "$(json_escape "$direct_target")" "$(json_escape "${d_err:-Falha ao montar dispositivo}")"
+                return 1
+            fi
+        else
+            mount_ext4 "$direct_target" "$d_mount_name"
+            return $?
+        fi
     fi
 
     if ! $JSON_MODE; then
@@ -283,21 +323,29 @@ cmd_up() {
         fi
         exit 1
     fi
-    if ! check_usbipd_installed; then
-        if $JSON_MODE; then
-            echo '{"ok":false,"message":"usbipd-win não encontrado"}'
-        else
-            health_check_usbipd || true
-        fi
-        exit 1
+
+    # 2. Selection (try Windows usbipd first; fallback to already-attached WSL USB devices)
+    local selections=()
+    if check_usbipd_installed; then
+        log_debug "Starting device selection..."
+        IFS=$'\n' read -d '' -r -a selections < <(select_usb_device) || true
+        set -e
     fi
 
-    # 2. Selection
-    log_debug "Starting device selection..."
-    IFS=$'\n' read -d '' -r -a selections < <(select_usb_device) || true
-    set -e
-    
     if [ ${#selections[@]} -eq 0 ]; then
+        local wsl_fallback
+        wsl_fallback=$(detect_usb_device "" || true)
+        if [ -n "$wsl_fallback" ]; then
+            selections+=("wsl|$wsl_fallback|local")
+        fi
+    fi
+
+    if [ ${#selections[@]} -eq 0 ]; then
+        if $JSON_MODE; then
+            echo '{"ok":false,"message":"Nenhum dispositivo USB encontrado no Windows ou no WSL2"}'
+        else
+            log_error "Nenhum dispositivo USB encontrado no Windows ou no WSL2"
+        fi
         exit 1
     fi
     
@@ -661,7 +709,7 @@ cmd_attach() {
 # =========================
 case "$COMMAND" in
     up|mount)
-        cmd_up
+        cmd_up "$BUSID_ARG"
         ;;
     down|unmount)
         cmd_down "$BUSID_ARG"

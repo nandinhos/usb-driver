@@ -5,6 +5,7 @@ import { shell } from 'electron';
 import {
   buildWslUncPath,
   isValidBusid,
+  isValidDeviceNode,
   isValidMountPath,
   parseJsonOutput,
 } from './validators';
@@ -167,13 +168,16 @@ export class UsbDriverBridge {
     return this.runCliJson(['status']);
   }
 
-  public async mountDevice(busid?: string) {
-    if (busid !== undefined && busid !== '') {
-      if (!isValidBusid(busid)) {
-        return { ok: false, message: `BUSID inválido: ${busid}` };
+  public async mountDevice(target?: string) {
+    if (target !== undefined && target !== '') {
+      if (isValidDeviceNode(target)) {
+        return this.runCliJson(['mount', target]);
+      }
+      if (!isValidBusid(target)) {
+        return { ok: false, message: `Identificador inválido: ${target}` };
       }
       if (process.platform === 'win32' && !this.simulate) {
-        await execFileAsync(USBIPD_EXE, ['attach', '--wsl', '--busid', busid], {
+        await execFileAsync(USBIPD_EXE, ['attach', '--wsl', '--busid', target], {
           timeout: EXEC_TIMEOUT_MS,
           windowsHide: true,
         }).catch(() => undefined);
