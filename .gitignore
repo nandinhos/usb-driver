@@ -22,3 +22,9 @@ config/local.conf
 # Arquivos temporários
 tmp/
 temp/
+
+# Electron GUI build artifacts
+gui/node_modules/
+gui/dist/
+gui/dist-electron/
+gui/release/
