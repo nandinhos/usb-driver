@@ -1,6 +1,7 @@
 # Arquivos de sistema
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
 
 # Configuração local do usuário
 config/local.conf
