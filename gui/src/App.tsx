@@ -55,6 +55,13 @@ export default function App() {
     [t.actionError]
   );
 
+  // Auto-dismiss discreto para todos os avisos após 4s
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   const refreshAll = useCallback(async () => {
     if (!hasBridge) {
       setLoading(false);
@@ -254,29 +261,30 @@ export default function App() {
         {/* Health Banner */}
         <HealthBanner health={health} simulate={simulate} t={t} />
 
-        {/* Toast Feedback */}
+        {/* Toast Flutuante Discreto (Canto Superior Direito) */}
         {toast && (
           <div
-            className={`flex shrink-0 items-center justify-between gap-3 rounded-xl border px-3.5 py-2 text-xs font-medium ${
+            role="status"
+            aria-live="polite"
+            className={`fixed top-4 right-4 z-50 flex max-w-sm items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs font-medium shadow-2xl backdrop-blur-md transition-all ${
               toast.ok
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-                : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                ? 'border-emerald-500/30 bg-slate-900/90 text-emerald-200 shadow-emerald-950/40'
+                : 'border-rose-500/35 bg-slate-900/95 text-rose-200 shadow-rose-950/40'
             }`}
           >
-            <div className="flex items-center gap-2">
-              {toast.ok ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-              ) : (
-                <XCircle className="h-4 w-4 shrink-0 text-rose-400" />
-              )}
-              <span>{toast.text}</span>
-            </div>
+            {toast.ok ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+            ) : (
+              <XCircle className="h-4 w-4 shrink-0 text-rose-400" />
+            )}
+            <span className="leading-snug">{toast.text}</span>
             <button
               type="button"
               onClick={() => setToast(null)}
-              className="text-slate-400 hover:text-slate-200"
+              aria-label={t.close}
+              className="ml-1 shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
             >
-              {t.close}
+              ✕
             </button>
           </div>
         )}
