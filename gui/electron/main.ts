@@ -110,6 +110,7 @@ function registerIpcHandlers(): void {
       bridge.unmountDevice(targetPath, options)
   );
   ipcMain.handle('usb:bind', (_event, busid: string) => bridge.bindDevice(busid));
+  ipcMain.handle('usb:detach', (_event, busid: string) => bridge.detachDevice(busid));
   ipcMain.handle('usb:open-explorer', (_event, wslMountPath: string) =>
     bridge.openInExplorer(wslMountPath)
   );

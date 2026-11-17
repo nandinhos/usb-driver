@@ -177,10 +177,29 @@ export class UsbDriverBridge {
           timeout: EXEC_TIMEOUT_MS,
           windowsHide: true,
         }).catch(() => undefined);
+        // Aguarda kernel do WSL2 registrar o novo bloco /dev/sdX antes de montar
+        await new Promise((r) => setTimeout(r, 800));
       }
       return this.runCliJson(['up', '--all']);
     }
     return this.runCliJson(['up', '--all']);
+  }
+
+  public async detachDevice(busid: string) {
+    if (!isValidBusid(busid)) {
+      return { ok: false, message: `BUSID inválido: ${busid}` };
+    }
+    if (this.simulate) {
+      return { ok: true, simulated: true, busid, message: 'Dispositivo desanexado (simulado)' };
+    }
+    if (process.platform !== 'win32') {
+      return { ok: false, message: 'Detach direto disponível apenas no Windows' };
+    }
+    await execFileAsync(USBIPD_EXE, ['detach', '--busid', busid], {
+      timeout: EXEC_TIMEOUT_MS,
+      windowsHide: true,
+    });
+    return { ok: true, busid, message: `Dispositivo ${busid} desanexado do WSL` };
   }
 
   public async unmountDevice(

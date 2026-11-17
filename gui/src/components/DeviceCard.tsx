@@ -15,6 +15,7 @@ interface WslDeviceCardProps {
   device: WslDevice;
   busy: boolean;
   t: TranslationDict;
+  onMount: () => void;
   onUnmount: (mountPoint: string, eject: boolean) => void;
   onOpenExplorer: (mountPoint: string) => void;
 }
@@ -30,6 +31,7 @@ export function WslDeviceCard({
   device,
   busy,
   t,
+  onMount,
   onUnmount,
   onOpenExplorer,
 }: WslDeviceCardProps) {
@@ -89,28 +91,41 @@ export function WslDeviceCard({
           </div>
         </div>
 
-        {isMounted && device.mountPoint && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {device.status === 'available' && (
             <button
               type="button"
               disabled={busy}
-              onClick={() => onOpenExplorer(device.mountPoint)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:border-cyan-500/40 hover:bg-slate-800 disabled:opacity-50"
+              onClick={onMount}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/20 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/30 disabled:opacity-50"
             >
-              <FolderOpen className="h-3.5 w-3.5 text-cyan-400" />
-              {t.openFolder}
+              <Play className="h-3.5 w-3.5" />
+              {t.mountLocal}
             </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onUnmount(device.mountPoint, true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
-            >
-              <Power className="h-3.5 w-3.5" />
-              {t.ejectSafe}
-            </button>
-          </div>
-        )}
+          )}
+          {isMounted && device.mountPoint && (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onOpenExplorer(device.mountPoint)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:border-cyan-500/40 hover:bg-slate-800 disabled:opacity-50"
+              >
+                <FolderOpen className="h-3.5 w-3.5 text-cyan-400" />
+                {t.openFolder}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onUnmount(device.mountPoint, true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
+              >
+                <Power className="h-3.5 w-3.5" />
+                {t.ejectSafe}
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </article>
   );
@@ -122,6 +137,7 @@ interface WindowsDeviceCardProps {
   t: TranslationDict;
   onBind: (busid: string) => void;
   onMount: (busid: string) => void;
+  onDetach: (busid: string) => void;
 }
 
 export function WindowsDeviceCard({
@@ -130,6 +146,7 @@ export function WindowsDeviceCard({
   t,
   onBind,
   onMount,
+  onDetach,
 }: WindowsDeviceCardProps) {
   const needsBind = device.state === 'NotShared';
   const isAttached = device.state === 'Attached';
@@ -184,15 +201,28 @@ export function WindowsDeviceCard({
               {t.shareUac}
             </button>
           ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onMount(device.busid)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/20 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/30 disabled:opacity-50"
-            >
-              <Play className="h-3.5 w-3.5" />
-              {t.mountWsl}
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onMount(device.busid)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/20 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/30 disabled:opacity-50"
+              >
+                <Play className="h-3.5 w-3.5" />
+                {t.mountWsl}
+              </button>
+              {isAttached && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onDetach(device.busid)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
+                >
+                  <Power className="h-3.5 w-3.5" />
+                  {t.detachWsl}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

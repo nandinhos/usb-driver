@@ -10,6 +10,7 @@ const api = {
   unmountDevice: (targetPath: string, options?: { force?: boolean; eject?: boolean }) =>
     ipcRenderer.invoke('usb:unmount', targetPath, options),
   bindDevice: (busid: string) => ipcRenderer.invoke('usb:bind', busid),
+  detachDevice: (busid: string) => ipcRenderer.invoke('usb:detach', busid),
   openInExplorer: (wslMountPath: string) => ipcRenderer.invoke('usb:open-explorer', wslMountPath),
 };
 

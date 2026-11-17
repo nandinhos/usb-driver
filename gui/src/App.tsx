@@ -124,13 +124,20 @@ export default function App() {
     await refreshAll();
   };
 
+  const syncAfterAction = useCallback(async () => {
+    await refreshAll();
+    window.setTimeout(() => {
+      refreshAll().catch(() => undefined);
+    }, 1200);
+  }, [refreshAll]);
+
   const handleMount = async (busid?: string) => {
     if (!hasBridge || busy) return;
     setBusy(true);
     try {
       const res = await window.usbDriver.mountDevice(busid);
       notify(res, t.mountSuccess);
-      await refreshAll();
+      await syncAfterAction();
     } finally {
       setBusy(false);
     }
@@ -142,7 +149,7 @@ export default function App() {
     try {
       const res = await window.usbDriver.unmountDevice(mountPoint, { eject });
       notify(res, t.unmountSuccess);
-      await refreshAll();
+      await syncAfterAction();
     } finally {
       setBusy(false);
     }
@@ -154,7 +161,19 @@ export default function App() {
     try {
       const res = await window.usbDriver.bindDevice(busid);
       notify(res, t.bindSuccess);
-      await refreshAll();
+      await syncAfterAction();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDetach = async (busid: string) => {
+    if (!hasBridge || busy) return;
+    setBusy(true);
+    try {
+      const res = await window.usbDriver.detachDevice(busid);
+      notify(res, t.unmountSuccess);
+      await syncAfterAction();
     } finally {
       setBusy(false);
     }
@@ -328,6 +347,7 @@ export default function App() {
                     device={dev}
                     busy={busy}
                     t={t}
+                    onMount={() => handleMount()}
                     onUnmount={handleUnmount}
                     onOpenExplorer={handleOpenExplorer}
                   />
@@ -355,6 +375,7 @@ export default function App() {
                     t={t}
                     onBind={handleBind}
                     onMount={handleMount}
+                    onDetach={handleDetach}
                   />
                 ))
               )}

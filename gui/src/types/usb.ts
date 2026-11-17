@@ -61,6 +61,7 @@ export interface UsbDriverApi {
   mountDevice: (busid?: string) => Promise<ActionResult>;
   unmountDevice: (targetPath: string, options?: { force?: boolean; eject?: boolean }) => Promise<ActionResult>;
   bindDevice: (busid: string) => Promise<ActionResult>;
+  detachDevice: (busid: string) => Promise<ActionResult>;
   openInExplorer: (wslMountPath: string) => Promise<ActionResult>;
 }
 
