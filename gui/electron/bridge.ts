@@ -210,19 +210,39 @@ export class UsbDriverBridge {
     targetPath: string,
     options: { force?: boolean; eject?: boolean } = {}
   ) {
-    if (targetPath === '__ALL__') {
-      const args = ['down'];
-      if (options.force) args.push('--force');
-      if (options.eject) args.push('--eject');
-      return this.runCliJson(args);
-    }
-    if (!isValidMountPath(targetPath)) {
+    if (targetPath !== '__ALL__' && !isValidMountPath(targetPath)) {
       return { ok: false, message: `Caminho de montagem inválido: ${targetPath}` };
     }
-    const args = ['down', targetPath];
+    const args = targetPath === '__ALL__' ? ['down'] : ['down', targetPath];
     if (options.force) args.push('--force');
     if (options.eject) args.push('--eject');
-    return this.runCliJson(args);
+
+    const res = await this.runCliJson<{ ok: boolean; message?: string }>(args);
+
+    // Garante detach seguro no host Windows após umount bem-sucedido no WSL2
+    if (res.ok && options.eject && process.platform === 'win32' && !this.simulate) {
+      try {
+        const { stdout } = await execFileAsync(USBIPD_EXE, ['state'], {
+          timeout: EXEC_TIMEOUT_MS,
+          windowsHide: true,
+        });
+        const stateData = JSON.parse(stdout) as UsbipdStateOutput;
+        const attached = (stateData.Devices || []).filter(
+          (d): d is UsbipdStateDevice & { BusId: string } =>
+            Boolean(d.BusId && d.ClientIPAddress && isValidBusid(d.BusId))
+        );
+        for (const dev of attached) {
+          await execFileAsync(USBIPD_EXE, ['detach', '--busid', dev.BusId], {
+            timeout: EXEC_TIMEOUT_MS,
+            windowsHide: true,
+          }).catch(() => undefined);
+        }
+      } catch {
+        // Ignora se já desanexado pelo WSL
+      }
+    }
+
+    return res;
   }
 
   public async bindDevice(busid: string) {
