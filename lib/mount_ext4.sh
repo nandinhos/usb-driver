@@ -27,7 +27,7 @@ is_safe_device() {
     local target_mnt="${MOUNT_POINT:-$DEFAULT_MOUNT_POINT}"
     target_mnt="${target_mnt%/}"
     
-    mnt=$(findmnt -rpno TARGET "$dev" 2>/dev/null | head -1)
+    mnt=$(findmnt -rn -o TARGET "$dev" 2>/dev/null | head -1)
     mnt="${mnt%/}" # Normalize
     
     # 1. ABSOLUTE PATH BLACKLIST: System paths (exact or subdirectories) and Windows DrvFs (/mnt/c, etc.)
@@ -212,7 +212,7 @@ list_available_devices() {
         [ -z "$label" ] && label="-"
         
         # Check mount status
-        mnt=$(findmnt -rpno TARGET "$dev" 2>/dev/null | head -1)
+        mnt=$(findmnt -rn -o TARGET "$dev" 2>/dev/null | head -1)
         mnt="${mnt%/}"
         
         if [ -n "$mnt" ]; then
@@ -342,7 +342,7 @@ mount_ext4() {
     
     # Double check if device is already mounted elsewhere
     local current_mnt
-    current_mnt=$(findmnt -rpno TARGET "$device" 2>/dev/null | head -1)
+    current_mnt=$(findmnt -rn -o TARGET "$device" 2>/dev/null | head -1)
     if [ -n "$current_mnt" ]; then
         log_warn "O dispositivo ${CYAN}$device${NC} já está montado em ${YELLOW}$current_mnt${NC}"
         return 1
@@ -569,7 +569,7 @@ EOF
         fs=$(lsblk -no FSTYPE "$dev" 2>/dev/null | head -1)
         size=$(lsblk -no SIZE "$dev" 2>/dev/null | head -1)
         label=$(lsblk -no LABEL "$dev" 2>/dev/null | head -1)
-        mnt=$(findmnt -rpno TARGET "$dev" 2>/dev/null | head -1)
+        mnt=$(findmnt -rn -o TARGET "$dev" 2>/dev/null | head -1)
         mnt="${mnt%/}"
 
         if [ -n "$mnt" ]; then
