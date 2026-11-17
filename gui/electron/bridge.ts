@@ -276,7 +276,20 @@ export class UsbDriverBridge {
       return { ok: false, message: `Caminho não permitido: ${wslMountPath}` };
     }
     if (process.platform === 'win32') {
-      const distro = this.wslDistro || process.env.WSL_DISTRO_NAME || 'Ubuntu';
+      let distro = this.wslDistro;
+      if (!distro) {
+        try {
+          const { stdout } = await execFileAsync('wsl.exe', ['--', 'printenv', 'WSL_DISTRO_NAME'], {
+            timeout: 5000,
+            windowsHide: true,
+          });
+          distro = stdout.trim();
+        } catch {
+          // fallback abaixo
+        }
+      }
+      distro = distro || process.env.WSL_DISTRO_NAME || 'Ubuntu';
+      this.wslDistro = distro;
       const unc = buildWslUncPath(distro, wslMountPath);
       const err = await shell.openPath(unc);
       return err ? { ok: false, message: err } : { ok: true, mountPoint: unc };
